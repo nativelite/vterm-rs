@@ -1,0 +1,40 @@
+# Changelog
+
+All notable changes to this project are documented here.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.1.0] - 2026-08-28
+
+### Added
+- `Term` — a minimal VT100/ECMA-48 terminal-emulator core: `new`, `feed`
+  (drive with child output through an internal `ansi::Parser`), `screen`
+  (the active buffer with its cursor synced for compositing/diff), and
+  `resize`.
+- Control set: cursor motion (`CUP`/`HVP`, `CUU`/`CUD`/`CUF`/`CUB`,
+  `CNL`/`CPL`, `CHA`, `VPA`; `CR`, `LF`/`VT`/`FF` with scroll, `BS`, `HT`);
+  erase (`ED`, `EL`); scroll region (`DECSTBM`) with `IL`/`DL` and `ICH`/`DCH`;
+  `SGR` style via `ansi::Style::apply_sgr`; autowrap (`DECAWM`) with a deferred
+  pending-wrap latch; cursor save/restore (`DECSC`/`DECRC`, CSI `s`/`u`);
+  cursor show/hide (`?25h/l`); alt-screen (`?1049`/`?47`/`?1047`). Titles,
+  charset selection, and other private modes are accepted and ignored quietly.
+- Test suite: hand-authored VT100/ECMA-48 vectors for every control — cursor
+  motion, CR/LF/BS/TAB, autowrap and the pending-wrap edge case, scroll on LF
+  at the bottom margin, `ED`/`EL` ranges, SGR-on-write, `DECSTBM` confinement,
+  `IL`/`DL`, `ICH`/`DCH`, save/restore, alt-screen swap/restore, resize, and a
+  chunk-split-invariance test proving the final screen is independent of how
+  the byte stream is chunked.
+- Stdlib-only `dev.py` runner (`check`, `test`, `fmt`, `guard`) and a Cargo.toml
+  dependency guard (nativelite org crates only — the sole allowed dependency is
+  `ansi` — with zero third-party/crates.io deps).
+
+Depends only on the org crate `ansi` (the app-variant rule); third-party
+dependencies remain forbidden. Third crate in the nativelite **agent terminal**
+suite (see `roadmap/amux-0.2-tiling.md` in `nativelite/ops`); the emulator core
+that amux 0.2 tiled panes are built on.
+
+[Unreleased]: https://github.com/nativelite/vterm-rs/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/nativelite/vterm-rs/releases/tag/v0.1.0

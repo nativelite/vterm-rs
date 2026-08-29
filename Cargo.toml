@@ -1,0 +1,20 @@
+[package]
+name = "vterm"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "A minimal terminal-emulator core: child VT output bytes in, a live ansi::Screen out. Zero third-party dependencies — depends only on the nativelite ansi crate."
+license = "MIT"
+repository = "https://github.com/nativelite/vterm-rs"
+keywords = ["terminal", "emulator", "vt100", "ansi", "nativelite"]
+categories = ["command-line-interface", "emulators"]
+
+# nativelite core rule: ZERO third-party dependencies. The only dependency
+# allowed is the org crate `ansi` (the app-variant rule): do not add anything
+# from crates.io here.
+[dependencies]
+ansi = { git = "https://github.com/nativelite/ansi-rs", branch = "main" }
+
+[lib]
+name = "vterm"
+path = "src/lib.rs"
