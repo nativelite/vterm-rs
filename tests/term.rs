@@ -391,3 +391,56 @@ fn chunk_split_yields_identical_screen() {
         }
     }
 }
+
+// --- synchronized output (DEC mode 2026) ------------------------------------
+
+#[test]
+fn sync_hides_partial_frame_until_close() {
+    // A frame drawn inside ?2026h..?2026l must not be visible mid-update: the
+    // host samples screen() and would otherwise composite a half-drawn frame.
+    let mut t = run(2, 5, b"OLD");
+    assert_eq!(row_text(&t, 0), "OLD  ");
+    assert!(!t.in_sync());
+
+    // Open the update, wipe the screen, start drawing the new frame.
+    t.feed(b"\x1b[?2026h");
+    assert!(t.in_sync());
+    t.feed(b"\x1b[2J\x1b[HNE"); // clear + begin writing "NEW"
+                                // Mid-update: readers still see the last complete frame.
+    assert_eq!(row_text(&t, 0), "OLD  ", "partial frame leaked during sync");
+
+    t.feed(b"W"); // finish drawing
+    assert_eq!(row_text(&t, 0), "OLD  ", "still mid-update");
+
+    // Close the update: the complete new frame is revealed atomically.
+    t.feed(b"\x1b[?2026l");
+    assert!(!t.in_sync());
+    assert_eq!(row_text(&t, 0), "NEW  ");
+}
+
+#[test]
+fn sync_nested_open_keeps_first_snapshot() {
+    // A second ?2026h before the close must not re-snapshot a half-drawn frame.
+    let mut t = run(1, 5, b"AAA");
+    t.feed(b"\x1b[?2026h");
+    t.feed(b"\x1b[2J\x1b[HB"); // partial
+    t.feed(b"\x1b[?2026h"); // nested open — keep the "AAA" snapshot
+    t.feed(b"BB");
+    assert_eq!(row_text(&t, 0), "AAA  ");
+    t.feed(b"\x1b[?2026l");
+    assert_eq!(row_text(&t, 0), "BBB  ");
+}
+
+#[test]
+fn resize_during_sync_reveals_live_buffer() {
+    // A resize mid-sync drops the stale snapshot rather than serving a
+    // wrong-sized frame from screen().
+    let mut t = run(2, 5, b"OLD");
+    t.feed(b"\x1b[?2026h");
+    t.feed(b"\x1b[2J\x1b[HNEW");
+    assert!(t.in_sync());
+    t.resize(3, 8);
+    assert!(!t.in_sync());
+    assert_eq!(t.screen().cols(), 8);
+    assert_eq!(row_text(&t, 0), "NEW     ");
+}

@@ -45,6 +45,17 @@ pub struct Term {
     /// The parser driving `feed`; one per stream so mid-sequence chunk splits
     /// are handled by `ansi`.
     parser: Parser,
+    /// Synchronized-output depth (DEC private mode 2026, `?2026h`/`?2026l`).
+    /// While an app is inside a synchronized update it is redrawing the frame;
+    /// a compositor that samples the screen mid-update sees a half-drawn frame
+    /// (leftover/overlapping text). While `in_sync`, [`Term::screen`] hands back
+    /// `sync_frame` — a clone of the last *complete* frame captured when the
+    /// update opened — so external readers only ever see whole frames. Writes
+    /// still land on the live buffer; the new frame is revealed on `?2026l`.
+    in_sync: bool,
+    /// The last complete frame, snapshotted when a synchronized update opens.
+    /// `Some` exactly while `in_sync`; `None` otherwise.
+    sync_frame: Option<Screen>,
 }
 
 impl Term {
@@ -69,6 +80,8 @@ impl Term {
             autowrap: true,
             cursor_visible: true,
             parser: Parser::new(),
+            in_sync: false,
+            sync_frame: None,
         }
     }
 
@@ -87,8 +100,21 @@ impl Term {
     /// compositor / `Screen::diff` parks the cursor correctly.
     pub fn screen(&self) -> &Screen {
         // Sync happens in `sync_cursor`, called after every `apply`. This is a
-        // read-only accessor; the cursor is already current.
-        self.active()
+        // read-only accessor; the cursor is already current. While a
+        // synchronized update (`?2026h`) is open we hand back the last complete
+        // frame instead of the live, half-drawn buffer (double-buffering).
+        match &self.sync_frame {
+            Some(frame) => frame,
+            None => self.active(),
+        }
+    }
+
+    /// True while the child is inside a synchronized update (DEC mode 2026):
+    /// it has emitted `?2026h` and not yet the matching `?2026l`. During this
+    /// window [`Term::screen`] returns the last complete frame. Exposed so a
+    /// host can also gate its own compositing on it if desired.
+    pub fn in_sync(&self) -> bool {
+        self.in_sync
     }
 
     /// Resize to `rows x cols` (clamped to at least 1). For 0.1 this rebuilds
@@ -107,6 +133,10 @@ impl Term {
         self.col = self.col.min(cols - 1);
         self.tabs = default_tabs(cols);
         self.wrap_pending = false;
+        // A resize rebuilds the buffers; any held sync frame is now the wrong
+        // size and stale. Drop it and reveal the freshly-sized live buffer.
+        self.in_sync = false;
+        self.sync_frame = None;
         self.sync_cursor();
     }
 
@@ -316,6 +346,7 @@ impl Term {
                 25 => self.cursor_visible = set,
                 7 => self.autowrap = set, // DECAWM
                 47 | 1047 | 1049 => self.set_alt(set),
+                2026 => self.set_sync(set), // synchronized output
                 _ => {} // other private modes: ignore quietly
             }
         }
@@ -331,6 +362,23 @@ impl Term {
             self.in_alt = false;
         }
         self.wrap_pending = false;
+    }
+
+    /// Enter/leave a synchronized update (DEC mode 2026). On open we snapshot
+    /// the current active buffer as the last complete frame and serve that from
+    /// `screen()` until close, so a mid-redraw frame is never exposed. Nested
+    /// opens keep the first (good) snapshot rather than capturing a half-drawn
+    /// one. On close we drop the snapshot, revealing the now-complete buffer.
+    fn set_sync(&mut self, open: bool) {
+        if open {
+            if !self.in_sync {
+                self.sync_frame = Some(self.active().clone());
+                self.in_sync = true;
+            }
+        } else {
+            self.in_sync = false;
+            self.sync_frame = None;
+        }
     }
 
     // --- cursor motion (clamped) -----------------------------------------

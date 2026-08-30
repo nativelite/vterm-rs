@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-30
+
+### Added
+- Synchronized output (DEC private mode 2026, `?2026h`/`?2026l`). Apps such as
+  Claude Code wrap each screen update in a synchronized block so a terminal
+  never shows a half-drawn frame. `Term` now double-buffers across a
+  synchronized update: on `?2026h` it snapshots the last complete frame and
+  `screen()` serves that snapshot until `?2026l`, then reveals the completed
+  live buffer atomically. Writes continue to land on the live buffer throughout.
+- `Term::in_sync()` — true while a synchronized update is open, so a host can
+  also gate its own compositing on it.
+
+### Fixed
+- Tiled compositors (e.g. amux) that sample `screen()` on a timer no longer
+  composite a pane mid-redraw, which produced stray leftover / overlapping text
+  when hosting apps that use mode 2026. Nested opens keep the first snapshot; a
+  resize mid-sync drops the stale snapshot and reveals the live buffer.
+
 ## [0.1.0] - 2026-08-28
 
 ### Added
