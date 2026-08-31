@@ -328,10 +328,13 @@ impl Term {
             }
             'J' => self.erase_display(at0(params, 0)),
             'K' => self.erase_line(at0(params, 0)),
+            'X' => self.erase_chars(n1(0)),
             'm' => self.style.apply_sgr(params),
             'r' => self.set_scroll_region(params),
             'L' => self.insert_lines(n1(0)),
             'M' => self.delete_lines(n1(0)),
+            'S' => self.scroll_up(n1(0)),
+            'T' => self.scroll_down(n1(0)),
             '@' => self.insert_chars(n1(0)),
             'P' => self.delete_chars(n1(0)),
             's' => self.save_cursor(),
@@ -462,6 +465,22 @@ impl Term {
         for c in range {
             self.active_mut().set(cr, c, blank);
         }
+    }
+
+    /// ECH: erase (blank) `n` cells from the cursor rightward, **without** moving
+    /// the cursor or shifting the rest of the line (unlike DCH, which closes the
+    /// gap). This is a common way to clear a run of cells — e.g. a status line or
+    /// trailing content — so dropping it leaves stale text behind. Clamped to the
+    /// row's right edge.
+    fn erase_chars(&mut self, n: usize) {
+        let cols = self.cols();
+        let (cr, cc) = (self.row, self.col);
+        let end = (cc + n.max(1)).min(cols);
+        let blank = Cell::default();
+        for c in cc..end {
+            self.active_mut().set(cr, c, blank);
+        }
+        self.wrap_pending = false;
     }
 
     // --- scroll region + line/char insert/delete --------------------------

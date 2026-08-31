@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-31
+
+### Added
+- **ECH (`CSI n X`) — erase character.** Blanks `n` cells from the cursor
+  rightward without moving the cursor or shifting the rest of the line (unlike
+  DCH). This is a common way to clear a run of cells (status lines, trailing
+  content); dropping it left **stale text behind** — a "leftover artifact" when
+  compositing. Now handled.
+- **SU (`CSI n S`) / SD (`CSI n T`) — scroll up / down.** Wire the existing
+  scroll-region up/down to their CSI finals, so an app that scrolls via SU/SD
+  (rather than newline/reverse-index) renders correctly instead of leaving stale
+  rows.
+
+These close standard VT100/ECMA-48 gaps in the "correct common core" — the class
+of missing sequences that leaves uncleared cells on screen.
+
 ## [0.2.0] - 2026-08-30
 
 ### Added

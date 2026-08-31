@@ -444,3 +444,41 @@ fn resize_during_sync_reveals_live_buffer() {
     assert_eq!(t.screen().cols(), 8);
     assert_eq!(row_text(&t, 0), "NEW     ");
 }
+
+// --- ECH (erase character) and SU/SD (scroll) -------------------------------
+
+#[test]
+fn ech_blanks_cells_without_shifting() {
+    // ECH (CSI X) erases n cells from the cursor; the rest of the line does NOT
+    // shift left (that would be DCH). "ABCDE", cursor to col 1, CSI 2 X → "A  DE".
+    // Its absence is a classic "stale text left behind" bug.
+    let t = run(1, 5, b"ABCDE\x1b[1;2H\x1b[2X");
+    assert_eq!(row_text(&t, 0), "A  DE");
+    assert_eq!(t.screen().cursor, (0, 1)); // cursor unmoved
+}
+
+#[test]
+fn ech_defaults_to_one_and_clamps() {
+    // No param = 1 cell; a huge count clamps to the row's right edge.
+    assert_eq!(row_text(&run(1, 4, b"WXYZ\x1b[1;1H\x1b[X"), 0), " XYZ");
+    assert_eq!(row_text(&run(1, 4, b"WXYZ\x1b[1;2H\x1b[99X"), 0), "W   ");
+}
+
+#[test]
+fn su_scrolls_the_screen_up() {
+    // CSI S scrolls the (default full-screen) region up one line: top line lost,
+    // blank in at the bottom.
+    let t = run(3, 3, b"AAA\r\nBBB\r\nCCC\x1b[S");
+    assert_eq!(row_text(&t, 0), "BBB");
+    assert_eq!(row_text(&t, 1), "CCC");
+    assert_eq!(row_text(&t, 2), "   ");
+}
+
+#[test]
+fn sd_scrolls_the_screen_down() {
+    // CSI T scrolls down one line: blank in at the top, bottom line lost.
+    let t = run(3, 3, b"AAA\r\nBBB\r\nCCC\x1b[T");
+    assert_eq!(row_text(&t, 0), "   ");
+    assert_eq!(row_text(&t, 1), "AAA");
+    assert_eq!(row_text(&t, 2), "BBB");
+}
