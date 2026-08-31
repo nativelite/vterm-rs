@@ -85,7 +85,7 @@ not a leaky imitation of xterm.
 ## Develop
 
 ```
-python dev.py check    # zero-dependency guard + cargo test (what CI runs)
+python dev.py check    # zero-dependency guard + cargo test (the pre-push gate)
 python dev.py test     # cargo test
 python dev.py fmt      # cargo fmt --check
 python dev.py guard    # dependency guard (org crates only, no third-party)
