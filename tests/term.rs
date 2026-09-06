@@ -4,7 +4,7 @@
 //! pair traced against VT100/ECMA-48 behavior. We assert cell contents, cursor
 //! position, style-on-write, scroll confinement, alt-screen swap, and
 //! chunk-split invariance (feeding the same bytes split at every boundary must
-//! yield an identical final screen). Zero dev-dependencies — the built-in
+//! yield an identical final screen). Zero dev-dependencies; the built-in
 //! `#[test]` harness only.
 
 use vterm::Term;
@@ -424,7 +424,7 @@ fn sync_nested_open_keeps_first_snapshot() {
     let mut t = run(1, 5, b"AAA");
     t.feed(b"\x1b[?2026h");
     t.feed(b"\x1b[2J\x1b[HB"); // partial
-    t.feed(b"\x1b[?2026h"); // nested open — keep the "AAA" snapshot
+    t.feed(b"\x1b[?2026h"); // nested open, keep the "AAA" snapshot
     t.feed(b"BB");
     assert_eq!(row_text(&t, 0), "AAA  ");
     t.feed(b"\x1b[?2026l");
