@@ -1,10 +1,10 @@
-//! vterm — a minimal terminal-emulator core, on the Rust standard library
+//! vterm: a minimal terminal-emulator core, on the Rust standard library
 //! plus the nativelite `ansi` crate alone. Zero third-party dependencies.
 //!
 //! One concern: turn a child process's VT output byte stream into a live
 //! [`ansi::Screen`] you can composite and diff. [`Term::feed`] drives an
-//! internal [`ansi::Parser`] and applies the resulting tokens — cursor
-//! motion, erase, scroll region, SGR style, autowrap, alt-screen — to a cell
+//! internal [`ansi::Parser`] and applies the resulting tokens (cursor
+//! motion, erase, scroll region, SGR style, autowrap, alt-screen) to a cell
 //! grid. [`Term::screen`] hands back the active buffer with its cursor set,
 //! ready for `Screen::diff` compositing.
 //!

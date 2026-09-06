@@ -49,8 +49,8 @@ pub struct Term {
     /// While an app is inside a synchronized update it is redrawing the frame;
     /// a compositor that samples the screen mid-update sees a half-drawn frame
     /// (leftover/overlapping text). While `in_sync`, [`Term::screen`] hands back
-    /// `sync_frame` — a clone of the last *complete* frame captured when the
-    /// update opened — so external readers only ever see whole frames. Writes
+    /// `sync_frame`, a clone of the last *complete* frame captured when the
+    /// update opened, so external readers only ever see whole frames. Writes
     /// still land on the live buffer; the new frame is revealed on `?2026l`.
     in_sync: bool,
     /// The last complete frame, snapshotted when a synchronized update opens.
@@ -469,8 +469,8 @@ impl Term {
 
     /// ECH: erase (blank) `n` cells from the cursor rightward, **without** moving
     /// the cursor or shifting the rest of the line (unlike DCH, which closes the
-    /// gap). This is a common way to clear a run of cells — e.g. a status line or
-    /// trailing content — so dropping it leaves stale text behind. Clamped to the
+    /// gap). This is a common way to clear a run of cells (e.g. a status line or
+    /// trailing content), so dropping it leaves stale text behind. Clamped to the
     /// row's right edge.
     fn erase_chars(&mut self, n: usize) {
         let cols = self.cols();

@@ -10,17 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.0] - 2026-08-31
 
 ### Added
-- **ECH (`CSI n X`) — erase character.** Blanks `n` cells from the cursor
+- **ECH (`CSI n X`): erase character.** Blanks `n` cells from the cursor
   rightward without moving the cursor or shifting the rest of the line (unlike
   DCH). This is a common way to clear a run of cells (status lines, trailing
-  content); dropping it left **stale text behind** — a "leftover artifact" when
+  content); dropping it left **stale text behind**, a "leftover artifact" when
   compositing. Now handled.
-- **SU (`CSI n S`) / SD (`CSI n T`) — scroll up / down.** Wire the existing
+- **SU (`CSI n S`) / SD (`CSI n T`): scroll up / down.** Wire the existing
   scroll-region up/down to their CSI finals, so an app that scrolls via SU/SD
   (rather than newline/reverse-index) renders correctly instead of leaving stale
   rows.
 
-These close standard VT100/ECMA-48 gaps in the "correct common core" — the class
+These close standard VT100/ECMA-48 gaps in the "correct common core": the class
 of missing sequences that leaves uncleared cells on screen.
 
 ## [0.2.0] - 2026-08-30
@@ -32,7 +32,7 @@ of missing sequences that leaves uncleared cells on screen.
   synchronized update: on `?2026h` it snapshots the last complete frame and
   `screen()` serves that snapshot until `?2026l`, then reveals the completed
   live buffer atomically. Writes continue to land on the live buffer throughout.
-- `Term::in_sync()` — true while a synchronized update is open, so a host can
+- `Term::in_sync()`: true while a synchronized update is open, so a host can
   also gate its own compositing on it.
 
 ### Fixed
@@ -44,7 +44,7 @@ of missing sequences that leaves uncleared cells on screen.
 ## [0.1.0] - 2026-08-28
 
 ### Added
-- `Term` — a minimal VT100/ECMA-48 terminal-emulator core: `new`, `feed`
+- `Term`: a minimal VT100/ECMA-48 terminal-emulator core: `new`, `feed`
   (drive with child output through an internal `ansi::Parser`), `screen`
   (the active buffer with its cursor synced for compositing/diff), and
   `resize`.
@@ -55,15 +55,15 @@ of missing sequences that leaves uncleared cells on screen.
   pending-wrap latch; cursor save/restore (`DECSC`/`DECRC`, CSI `s`/`u`);
   cursor show/hide (`?25h/l`); alt-screen (`?1049`/`?47`/`?1047`). Titles,
   charset selection, and other private modes are accepted and ignored quietly.
-- Test suite: hand-authored VT100/ECMA-48 vectors for every control — cursor
+- Test suite: hand-authored VT100/ECMA-48 vectors for every control: cursor
   motion, CR/LF/BS/TAB, autowrap and the pending-wrap edge case, scroll on LF
   at the bottom margin, `ED`/`EL` ranges, SGR-on-write, `DECSTBM` confinement,
   `IL`/`DL`, `ICH`/`DCH`, save/restore, alt-screen swap/restore, resize, and a
   chunk-split-invariance test proving the final screen is independent of how
   the byte stream is chunked.
 - Stdlib-only `dev.py` runner (`check`, `test`, `fmt`, `guard`) and a Cargo.toml
-  dependency guard (nativelite org crates only — the sole allowed dependency is
-  `ansi` — with zero third-party/crates.io deps).
+  dependency guard (nativelite org crates only; the sole allowed dependency is
+  `ansi`, with zero third-party/crates.io deps).
 
 Depends only on the org crate `ansi` (the app-variant rule); third-party
 dependencies remain forbidden. Third crate in the nativelite **agent terminal**
