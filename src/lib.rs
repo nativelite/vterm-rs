@@ -19,11 +19,11 @@
 //! This is a *correct common core*, not a pixel-perfect xterm. Wide/CJK
 //! characters, sixel/images, mouse reporting, and exotic private modes are
 //! deliberately out of scope (see the README's fidelity boundaries); the host
-//! app's answer for those is raw passthrough (amux's "zoom").
+//! app's answer for those is raw passthrough (atrium's "zoom").
 //!
 //! There is no I/O here: no PTY, no raw mode. `vterm` turns bytes into a
 //! screen; feeding it child output and painting its screen are the caller's
-//! job (see `pty` and `amux`).
+//! job (see `pty` and `atrium`).
 
 mod term;
 

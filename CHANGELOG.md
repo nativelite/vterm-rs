@@ -36,7 +36,7 @@ of missing sequences that leaves uncleared cells on screen.
   also gate its own compositing on it.
 
 ### Fixed
-- Tiled compositors (e.g. amux) that sample `screen()` on a timer no longer
+- Tiled compositors (e.g. atrium) that sample `screen()` on a timer no longer
   composite a pane mid-redraw, which produced stray leftover / overlapping text
   when hosting apps that use mode 2026. Nested opens keep the first snapshot; a
   resize mid-sync drops the stale snapshot and reveals the live buffer.

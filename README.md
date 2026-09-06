@@ -6,7 +6,7 @@ in-memory grid of styled cells you can composite into a sub-rectangle and diff
 onto a real terminal.
 
 Part of the nativelite **agent terminal** suite. Built for
-[amux](https://github.com/nativelite/amux)'s tiled panes, where a pane no
+[atrium](https://github.com/nativelite/amux)'s tiled panes, where a pane no
 longer owns the whole screen, so its whole-screen escape sequences (cursor
 moves, clears, scroll regions, wrapping) must be *interpreted* into a grid and
 painted at an offset. Useful anywhere child output is rendered into a
@@ -71,7 +71,7 @@ are accepted and ignored quietly.
 ## Fidelity boundaries (honest scope)
 
 `vterm` is a *correct common core*, **not** a pixel-perfect xterm. Deliberately
-out of scope; the host app's answer for these is raw passthrough (in amux,
+out of scope; the host app's answer for these is raw passthrough (in atrium,
 "zoom" the pane to full-screen and the bytes go straight to your real terminal):
 
 - **Wide / CJK characters.** `ansi::Cell` is one column per `char` by design, so

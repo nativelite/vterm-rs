@@ -1,5 +1,5 @@
 [package]
-name = "vterm"
+name = "nativelite-vterm"
 version = "0.3.0"
 edition = "2021"
 rust-version = "1.70"
@@ -13,7 +13,7 @@ categories = ["command-line-interface", "emulators"]
 # allowed is the org crate `ansi` (the app-variant rule): do not add anything
 # from crates.io here.
 [dependencies]
-ansi = { git = "https://github.com/nativelite/ansi-rs", branch = "main" }
+ansi = { package = "nativelite-ansi", version = "0.1", path = "../ansi-rs" }
 
 [lib]
 name = "vterm"
