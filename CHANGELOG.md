@@ -67,8 +67,8 @@ of missing sequences that leaves uncleared cells on screen.
 
 Depends only on the org crate `ansi` (the app-variant rule); third-party
 dependencies remain forbidden. Third crate in the nativelite **agent terminal**
-suite (see `roadmap/amux-0.2-tiling.md` in `nativelite/ops`); the emulator core
-that amux 0.2 tiled panes are built on.
+suite (see `roadmap/atrium-0.2-tiling.md` in `nativelite/ops`); the emulator core
+that atrium 0.2 tiled panes are built on.
 
 [Unreleased]: https://github.com/nativelite/vterm-rs/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/nativelite/vterm-rs/releases/tag/v0.1.0

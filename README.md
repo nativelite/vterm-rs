@@ -6,7 +6,7 @@ in-memory grid of styled cells you can composite into a sub-rectangle and diff
 onto a real terminal.
 
 Part of the nativelite **agent terminal** suite. Built for
-[atrium](https://github.com/nativelite/amux)'s tiled panes, where a pane no
+[atrium](https://github.com/nativelite/atrium)'s tiled panes, where a pane no
 longer owns the whole screen, so its whole-screen escape sequences (cursor
 moves, clears, scroll regions, wrapping) must be *interpreted* into a grid and
 painted at an offset. Useful anywhere child output is rendered into a
