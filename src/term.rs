@@ -350,7 +350,7 @@ impl Term {
                 7 => self.autowrap = set, // DECAWM
                 47 | 1047 | 1049 => self.set_alt(set),
                 2026 => self.set_sync(set), // synchronized output
-                _ => {} // other private modes: ignore quietly
+                _ => {}                     // other private modes: ignore quietly
             }
         }
     }
