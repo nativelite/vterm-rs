@@ -629,3 +629,28 @@ fn wide_glyph_wrap_is_chunk_split_invariant() {
     assert_eq!(s.cell(1, 0).ch, '世');
     assert_eq!(s.cursor, (1, 2));
 }
+
+#[test]
+fn wide_glyph_at_right_edge_with_autowrap_off_is_dropped_not_split() {
+    // atrium-dev-r8 item-5 edge test (reviewer-flagged). DECAWM off (?7l): a
+    // wide glyph that cannot fit in the last column is dropped whole — never
+    // split, never wrapped. The last column keeps its content and the cursor
+    // does not move.
+    let mut t = Term::new(2, 4);
+    t.feed(b"\x1b[?7l"); // autowrap off
+    t.feed(b"\x1b[1;4H"); // cursor to row 1, col 4 → 0-based (0,3), the last column
+    t.feed("世".as_bytes()); // wide glyph: no room, autowrap off → dropped
+    let s = t.screen();
+    assert_ne!(
+        s.cell(0, 3).ch,
+        '世',
+        "wide glyph must not be written at the edge"
+    );
+    assert_eq!(s.cell(0, 3).width, 1, "no half-glyph lead left behind");
+    assert_eq!(
+        s.cursor,
+        (0, 3),
+        "cursor stays put when the glyph is dropped"
+    );
+    assert_eq!(s.cell(1, 0).ch, ' ', "nothing wrapped to the next line");
+}
