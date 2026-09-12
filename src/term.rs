@@ -45,6 +45,10 @@ pub struct Term {
     /// The parser driving `feed`; one per stream so mid-sequence chunk splits
     /// are handled by `ansi`.
     parser: Parser,
+    /// Set to `true` by `feed` (non-empty bytes) and `resize`; reset and
+    /// returned by `take_dirty`. Lets callers skip a composite when nothing
+    /// has changed since the last rendered frame.
+    dirty: bool,
     /// Synchronized-output depth (DEC private mode 2026, `?2026h`/`?2026l`).
     /// While an app is inside a synchronized update it is redrawing the frame;
     /// a compositor that samples the screen mid-update sees a half-drawn frame
@@ -80,6 +84,7 @@ impl Term {
             autowrap: true,
             cursor_visible: true,
             parser: Parser::new(),
+            dirty: false,
             in_sync: false,
             sync_frame: None,
         }
@@ -89,10 +94,21 @@ impl Term {
     /// (mid-escape, mid-UTF-8); the internal parser holds partial state across
     /// calls, so the final screen is independent of how bytes were chunked.
     pub fn feed(&mut self, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+        self.dirty = true;
         let tokens = self.parser.feed(bytes);
         for tok in tokens {
             self.apply(&tok);
         }
+    }
+
+    /// Returns `true` if any bytes have been fed (or a resize has occurred)
+    /// since the last call to `take_dirty`, and resets the flag. Call once
+    /// per frame decision to avoid redundant compositing.
+    pub fn take_dirty(&mut self) -> bool {
+        std::mem::replace(&mut self.dirty, false)
     }
 
     /// The active buffer (alternate while in alt-screen, else primary), with
@@ -137,6 +153,7 @@ impl Term {
         // size and stale. Drop it and reveal the freshly-sized live buffer.
         self.in_sync = false;
         self.sync_frame = None;
+        self.dirty = true;
         self.sync_cursor();
     }
 

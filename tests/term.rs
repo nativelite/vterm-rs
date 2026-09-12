@@ -482,3 +482,44 @@ fn sd_scrolls_the_screen_down() {
     assert_eq!(row_text(&t, 1), "AAA");
     assert_eq!(row_text(&t, 2), "BBB");
 }
+
+// --- take_dirty ---------------------------------------------------------------
+
+#[test]
+fn take_dirty_is_false_on_a_fresh_term() {
+    let mut t = Term::new(4, 10);
+    assert!(!t.take_dirty(), "new term must not be dirty");
+}
+
+#[test]
+fn take_dirty_is_true_after_feed_and_resets_on_second_call() {
+    let mut t = Term::new(4, 10);
+    t.feed(b"hello");
+    assert!(t.take_dirty(), "dirty after feed");
+    assert!(!t.take_dirty(), "dirty resets on second take_dirty");
+}
+
+#[test]
+fn take_dirty_is_false_after_empty_feed() {
+    let mut t = Term::new(4, 10);
+    t.feed(b"");
+    assert!(!t.take_dirty(), "empty feed must not set dirty");
+}
+
+#[test]
+fn take_dirty_is_true_after_resize() {
+    let mut t = Term::new(4, 10);
+    t.take_dirty(); // clear any residual
+    t.resize(6, 20);
+    assert!(t.take_dirty(), "resize must set dirty");
+    assert!(!t.take_dirty(), "dirty resets after resize take");
+}
+
+#[test]
+fn take_dirty_accumulates_across_multiple_feeds_before_reset() {
+    let mut t = Term::new(4, 10);
+    t.feed(b"A");
+    t.feed(b"B");
+    assert!(t.take_dirty(), "dirty after two feeds");
+    assert!(!t.take_dirty(), "dirty resets after single take");
+}
