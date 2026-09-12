@@ -221,10 +221,12 @@ impl Term {
             self.wrap_pending = false;
         }
         let (r, c) = (self.row, self.col);
-        let cell = Cell {
-            ch,
-            style: self.style,
-        };
+        // Compile bridge for ansi::Cell.width (atrium-dev-r8, item 2): every
+        // printed cell is single-width here. vterm keeps its one-cell-per-char
+        // grid; the compositor computes real display width from the character
+        // (via the uwidth crate) when it blits panes into the master screen, so
+        // width does not need to live in the emulator's grid.
+        let cell = Cell::new(ch, self.style);
         self.active_mut().set(r, c, cell);
         if self.col + 1 >= cols {
             // At the right edge: stay put and latch a pending wrap (deferred to
