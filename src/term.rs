@@ -211,33 +211,64 @@ impl Term {
     }
 
     /// Write one printable character at the cursor, honoring autowrap via the
-    /// pending-wrap latch.
+    /// pending-wrap latch and East Asian double-width via [`uwidth`].
+    ///
+    /// A width-2 glyph (CJK, fullwidth, emoji) occupies two columns: its left
+    /// half is a [`Cell::wide`] carrying the character, its right half a
+    /// [`Cell::continuation`] carrying no glyph. The cursor advances by two. A
+    /// wide glyph that would straddle the right edge is not split — the whole
+    /// glyph wraps to the next line (autowrap on) or is dropped (autowrap off),
+    /// matching real terminals. Zero-width characters (combining marks, joiners,
+    /// variation selectors) are dropped: this grid stores one character per
+    /// cell and cannot compose them, and dropping avoids the column drift that
+    /// giving them a cell of their own would cause.
     fn print(&mut self, ch: char) {
         let cols = self.cols();
+        let w = uwidth::char_width(ch) as usize;
+
+        // Zero-width: no cell, no cursor movement (see doc comment).
+        if w == 0 {
+            return;
+        }
+
         if self.wrap_pending && self.autowrap {
             // The previous write filled the last column; wrap now.
             self.col = 0;
             self.line_feed();
             self.wrap_pending = false;
         }
-        let (r, c) = (self.row, self.col);
-        // Compile bridge for ansi::Cell.width (atrium-dev-r8, item 2): every
-        // printed cell is single-width here. vterm keeps its one-cell-per-char
-        // grid; the compositor computes real display width from the character
-        // (via the uwidth crate) when it blits panes into the master screen, so
-        // width does not need to live in the emulator's grid.
-        let cell = Cell::new(ch, self.style);
-        self.active_mut().set(r, c, cell);
-        if self.col + 1 >= cols {
-            // At the right edge: stay put and latch a pending wrap (deferred to
-            // the next printable), matching real terminals and the `ansi`
-            // diff's pending-wrap comment.
+
+        // A double-width glyph needs two columns; if only one remains it cannot
+        // be split. Wrap the whole glyph to the next line (or drop it when
+        // autowrap is off, rather than overwrite half a cell at the edge).
+        if w == 2 && self.col + 1 >= cols {
+            if !self.autowrap {
+                return;
+            }
+            self.col = 0;
+            self.line_feed();
+            self.wrap_pending = false;
+        }
+
+        let (r, c, style) = (self.row, self.col, self.style);
+        if w == 2 {
+            self.active_mut().set(r, c, Cell::wide(ch, style));
+            self.active_mut().set(r, c + 1, Cell::continuation(style));
+        } else {
+            self.active_mut().set(r, c, Cell::new(ch, style));
+        }
+
+        // Advance by the glyph's width. If that lands at or past the last
+        // column, stay at the last column and latch a pending wrap (deferred to
+        // the next printable), matching real terminals and the `ansi` diff's
+        // pending-wrap comment. A width-1 glyph advances exactly as before.
+        if self.col + w >= cols {
             if self.autowrap {
                 self.wrap_pending = true;
             }
-            // With autowrap off, the cursor sticks at the last column.
+            self.col = cols - 1;
         } else {
-            self.col += 1;
+            self.col += w;
         }
     }
 

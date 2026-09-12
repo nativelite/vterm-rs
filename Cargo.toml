@@ -9,11 +9,12 @@ repository = "https://github.com/nativelite/vterm-rs"
 keywords = ["terminal", "emulator", "vt100", "ansi", "nativelite"]
 categories = ["command-line-interface", "emulators"]
 
-# nativelite core rule: ZERO third-party dependencies. The only dependency
-# allowed is the org crate `ansi` (the app-variant rule): do not add anything
-# from crates.io here.
+# nativelite core rule: ZERO third-party dependencies. The only dependencies
+# allowed are org crates (the app-variant rule): `ansi` for the screen model and
+# `uwidth` for Unicode display width — do not add anything from crates.io here.
 [dependencies]
 ansi = { package = "nativelite-ansi", version = "0.1", path = "../ansi-rs" }
+uwidth = { package = "nativelite-uwidth", version = "0.1", path = "../uwidth-rs" }
 
 [lib]
 name = "vterm"

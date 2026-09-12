@@ -523,3 +523,109 @@ fn take_dirty_accumulates_across_multiple_feeds_before_reset() {
     assert!(t.take_dirty(), "dirty after two feeds");
     assert!(!t.take_dirty(), "dirty resets after single take");
 }
+
+// --- East Asian double-width (atrium-dev-r8 item 3) -------------------------
+
+#[test]
+fn wide_glyph_occupies_two_cells_and_advances_by_two() {
+    // A CJK ideograph is a width-2 lead cell + a width-0 continuation, and the
+    // cursor advances by two columns.
+    let t = run(4, 10, "世".as_bytes());
+    let s = t.screen();
+    assert_eq!(s.cell(0, 0).ch, '世');
+    assert_eq!(s.cell(0, 0).width, 2, "lead cell is width 2");
+    assert_eq!(
+        s.cell(0, 1).width,
+        0,
+        "right half is a width-0 continuation"
+    );
+    assert_eq!(s.cursor, (0, 2));
+}
+
+#[test]
+fn wide_glyphs_pack_without_drift() {
+    // 世界 lays out as lead,cont,lead,cont across four columns; the cursor ends
+    // at column 4 (not 2), so following ASCII lands aligned.
+    let t = run(4, 10, "世界X".as_bytes());
+    let s = t.screen();
+    assert_eq!(s.cell(0, 0).ch, '世');
+    assert_eq!(s.cell(0, 1).width, 0);
+    assert_eq!(s.cell(0, 2).ch, '界');
+    assert_eq!(s.cell(0, 3).width, 0);
+    assert_eq!(s.cell(0, 4).ch, 'X');
+    assert_eq!(s.cursor, (0, 5));
+}
+
+#[test]
+fn emoji_is_width_two() {
+    let t = run(4, 10, "🚀".as_bytes());
+    let s = t.screen();
+    assert_eq!(s.cell(0, 0).ch, '🚀');
+    assert_eq!(s.cell(0, 0).width, 2);
+    assert_eq!(s.cell(0, 1).width, 0);
+    assert_eq!(s.cursor, (0, 2));
+}
+
+#[test]
+fn wide_glyph_at_right_edge_wraps_whole_not_split() {
+    // Cursor at the last column (col 4 of a 5-wide term) with a wide glyph: it
+    // cannot be split, so the WHOLE glyph wraps to the next line. The last
+    // column of the first row stays blank (never a half glyph), and borders in
+    // a compositor stay aligned.
+    let t = run(3, 5, b"ABCD\xe4\xb8\x96"); // "ABCD" then 世
+    let s = t.screen();
+    assert_eq!(
+        row_text(&t, 0),
+        "ABCD ",
+        "row 0 keeps its blank last column"
+    );
+    assert_eq!(
+        s.cell(0, 4).width,
+        1,
+        "last column is a blank, not a half glyph"
+    );
+    assert_eq!(
+        s.cell(1, 0).ch,
+        '世',
+        "wide glyph wrapped whole to next line"
+    );
+    assert_eq!(s.cell(1, 0).width, 2);
+    assert_eq!(s.cell(1, 1).width, 0);
+    assert_eq!(s.cursor, (1, 2));
+}
+
+#[test]
+fn cup_then_wide_lands_at_target_and_advances() {
+    // CUP to (row 2, col 3) then a wide glyph: it lands exactly there and the
+    // cursor advances by two.
+    let t = run(6, 12, b"\x1b[3;4H\xe4\xb8\x96"); // CUP 3;4 then 世
+    let s = t.screen();
+    assert_eq!(s.cell(2, 3).ch, '世');
+    assert_eq!(s.cell(2, 3).width, 2);
+    assert_eq!(s.cell(2, 4).width, 0);
+    assert_eq!(s.cursor, (2, 5));
+}
+
+#[test]
+fn zero_width_combining_mark_is_dropped_no_drift() {
+    // A base letter followed by a combining acute accent (U+0301): the mark
+    // takes no cell and does not move the cursor, so text after it stays put.
+    let t = run(4, 10, "e\u{0301}x".as_bytes());
+    let s = t.screen();
+    assert_eq!(s.cell(0, 0).ch, 'e');
+    assert_eq!(s.cell(0, 1).ch, 'x', "combining mark consumed no column");
+    assert_eq!(s.cursor, (0, 2));
+}
+
+#[test]
+fn wide_glyph_wrap_is_chunk_split_invariant() {
+    // The wide glyph's bytes split across feeds must still wrap whole. Feed
+    // "ABCD" then 世 one byte at a time.
+    let mut t = Term::new(3, 5);
+    for b in b"ABCD\xe4\xb8\x96" {
+        t.feed(&[*b]);
+    }
+    let s = t.screen();
+    assert_eq!(s.cell(1, 0).ch, '世');
+    assert_eq!(s.cursor, (1, 2));
+}
