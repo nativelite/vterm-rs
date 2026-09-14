@@ -1,6 +1,7 @@
 //! The terminal emulator: bytes in, a live [`ansi::Screen`] out.
 //!
-//! [`Term`] holds a primary and an alternate [`ansi::Screen`], a cursor, the
+//! [`Term`] holds a primary and an alternate [`ansi::Screen`] (the active one
+//! owns the cursor — there is no second copy to keep in sync), the
 //! current SGR [`ansi::Style`], a scroll region, tab stops, a saved-cursor
 //! slot, and the flags a VT100 tracks (autowrap, cursor visibility, and the
 //! pending-wrap latch at the right edge). [`Term::feed`] runs the child's
@@ -11,7 +12,7 @@
 //! (cursor motion, CUP), we treat a 0 from the parser as that default; where
 //! it defaults to 0 (erase/SGR selectors), 0 is used directly.
 
-use ansi::{Cell, Parser, Screen, Style, Token};
+use ansi::{Cell, Cursor, Parser, Screen, Style, Token};
 
 /// A minimal VT100/ECMA-48 terminal emulator over an [`ansi::Screen`].
 pub struct Term {
@@ -22,16 +23,13 @@ pub struct Term {
     alt: Screen,
     /// True while the alternate buffer is active.
     in_alt: bool,
-    /// Cursor position, 0-based `(row, col)`.
-    row: usize,
-    col: usize,
     /// Current SGR style applied to newly written cells.
     style: Style,
     /// Scroll region, 0-based inclusive `[top, bottom]` (DECSTBM).
     scroll_top: usize,
     scroll_bottom: usize,
-    /// Saved cursor state (DECSC/`ESC 7` and CSI `s`): row, col, style.
-    saved: Option<(usize, usize, Style)>,
+    /// Saved cursor state (DECSC/`ESC 7` and CSI `s`): position and style.
+    saved: Option<(Cursor, Style)>,
     /// Tab stops: `tabs[c]` true means a tab stop at column `c`.
     tabs: Vec<bool>,
     /// Pending-wrap latch: set after writing the last column so the *next*
@@ -73,8 +71,6 @@ impl Term {
             primary: Screen::new(rows, cols),
             alt: Screen::new(rows, cols),
             in_alt: false,
-            row: 0,
-            col: 0,
             style: Style::default(),
             scroll_top: 0,
             scroll_bottom: rows - 1,
@@ -111,12 +107,11 @@ impl Term {
         std::mem::replace(&mut self.dirty, false)
     }
 
-    /// The active buffer (alternate while in alt-screen, else primary), with
-    /// its public `cursor` field synced to the emulator's position so a
-    /// compositor / `Screen::diff` parks the cursor correctly.
+    /// The active buffer (alternate while in alt-screen, else primary). Its
+    /// cursor is the emulator's cursor, so a compositor / `Screen::diff` parks
+    /// the terminal cursor correctly.
     pub fn screen(&self) -> &Screen {
-        // Sync happens in `sync_cursor`, called after every `apply`. This is a
-        // read-only accessor; the cursor is already current. While a
+        // The active buffer owns the cursor, so it is always current. While a
         // synchronized update (`?2026h`) is open we hand back the last complete
         // frame instead of the live, half-drawn buffer (double-buffering).
         match &self.sync_frame {
@@ -139,14 +134,15 @@ impl Term {
     pub fn resize(&mut self, rows: usize, cols: usize) {
         let rows = rows.max(1);
         let cols = cols.max(1);
+        let cursor = self.cursor();
         let old_primary = std::mem::replace(&mut self.primary, Screen::new(rows, cols));
         let old_alt = std::mem::replace(&mut self.alt, Screen::new(rows, cols));
         copy_top_left(&old_primary, &mut self.primary);
         copy_top_left(&old_alt, &mut self.alt);
         self.scroll_top = self.scroll_top.min(rows - 1);
         self.scroll_bottom = rows - 1;
-        self.row = self.row.min(rows - 1);
-        self.col = self.col.min(cols - 1);
+        // The fresh active buffer takes the cursor, clamped onto the new size.
+        self.active_mut().set_cursor(cursor);
         self.tabs = default_tabs(cols);
         self.wrap_pending = false;
         // A resize rebuilds the buffers; any held sync frame is now the wrong
@@ -154,7 +150,6 @@ impl Term {
         self.in_sync = false;
         self.sync_frame = None;
         self.dirty = true;
-        self.sync_cursor();
     }
 
     // --- internals --------------------------------------------------------
@@ -183,10 +178,19 @@ impl Term {
         self.active().cols()
     }
 
-    /// Mirror the emulator cursor into the active screen's public field.
-    fn sync_cursor(&mut self) {
-        let (r, c) = (self.row, self.col);
-        self.active_mut().cursor = (r, c);
+    /// The emulator cursor: the active buffer's.
+    fn cursor(&self) -> Cursor {
+        self.active().cursor()
+    }
+
+    fn set_row(&mut self, row: usize) {
+        let col = self.cursor().col;
+        self.active_mut().set_cursor(Cursor { row, col });
+    }
+
+    fn set_col(&mut self, col: usize) {
+        let row = self.cursor().row;
+        self.active_mut().set_cursor(Cursor { row, col });
     }
 
     fn apply(&mut self, tok: &Token) {
@@ -207,7 +211,6 @@ impl Term {
             // Titles, DCS/SOS/PM/APC strings: nothing to render.
             Token::Osc(_) | Token::Other { .. } => {}
         }
-        self.sync_cursor();
     }
 
     /// Write one printable character at the cursor, honoring autowrap via the
@@ -223,7 +226,6 @@ impl Term {
     /// cell and cannot compose them, and dropping avoids the column drift that
     /// giving them a cell of their own would cause.
     fn print(&mut self, ch: char) {
-        let cols = self.cols();
         let w = uwidth::char_width(ch) as usize;
 
         // Zero-width: no cell, no cursor movement (see doc comment).
@@ -233,7 +235,7 @@ impl Term {
 
         if self.wrap_pending && self.autowrap {
             // The previous write filled the last column; wrap now.
-            self.col = 0;
+            self.set_col(0);
             self.line_feed();
             self.wrap_pending = false;
         }
@@ -241,41 +243,48 @@ impl Term {
         // A double-width glyph needs two columns; if only one remains it cannot
         // be split. Wrap the whole glyph to the next line (or drop it when
         // autowrap is off, rather than overwrite half a cell at the edge).
-        if w == 2 && self.col + 1 >= cols {
+        if w == 2 && self.cursor().col + 1 >= self.cols() {
             if !self.autowrap {
                 return;
             }
-            self.col = 0;
+            self.set_col(0);
             self.line_feed();
             self.wrap_pending = false;
         }
 
-        let (r, c, style) = (self.row, self.col, self.style);
-        if w == 2 {
-            self.active_mut().set(r, c, Cell::wide(ch, style));
-            self.active_mut().set(r, c + 1, Cell::continuation(style));
+        // The per-character hot path borrows the active buffer once for the
+        // cells and the cursor together (field-disjoint, so `self.wrap_pending`
+        // stays writable below).
+        let (autowrap, style) = (self.autowrap, self.style);
+        let screen = if self.in_alt {
+            &mut self.alt
         } else {
-            self.active_mut().set(r, c, Cell::new(ch, style));
+            &mut self.primary
+        };
+        let cols = screen.cols();
+        let Cursor { row: r, col: c } = screen.cursor();
+        if w == 2 {
+            screen.set(r, c, Cell::wide(ch, style));
+            screen.set(r, c + 1, Cell::continuation(style));
+        } else {
+            screen.set(r, c, Cell::new(ch, style));
         }
-
         // Advance by the glyph's width. If that lands at or past the last
         // column, stay at the last column and latch a pending wrap (deferred to
         // the next printable), matching real terminals and the `ansi` diff's
         // pending-wrap comment. A width-1 glyph advances exactly as before.
-        if self.col + w >= cols {
-            if self.autowrap {
-                self.wrap_pending = true;
-            }
-            self.col = cols - 1;
-        } else {
-            self.col += w;
+        let at_edge = c + w >= cols;
+        let next = if at_edge { cols - 1 } else { c + w };
+        screen.set_cursor(Cursor { row: r, col: next });
+        if at_edge && autowrap {
+            self.wrap_pending = true;
         }
     }
 
     fn control(&mut self, b: u8) {
         match b {
             b'\r' => {
-                self.col = 0;
+                self.set_col(0);
                 self.wrap_pending = false;
             }
             b'\n' | 0x0b | 0x0c => {
@@ -285,13 +294,13 @@ impl Term {
             }
             0x08 => {
                 // BS: cursor left one column, clamped at column 0.
-                if self.col > 0 {
-                    self.col -= 1;
+                if self.cursor().col > 0 {
+                    self.set_col(self.cursor().col - 1);
                 }
                 self.wrap_pending = false;
             }
             b'\t' => {
-                self.col = self.next_tab_stop();
+                self.set_col(self.next_tab_stop());
                 self.wrap_pending = false;
             }
             _ => {} // BEL and other C0 controls: nothing to render.
@@ -301,17 +310,17 @@ impl Term {
     /// Move the cursor down one line; if it is at the bottom margin, scroll the
     /// scroll region up by one instead.
     fn line_feed(&mut self) {
-        if self.row == self.scroll_bottom {
+        if self.cursor().row == self.scroll_bottom {
             self.scroll_up(1);
-        } else if self.row + 1 < self.rows() {
-            self.row += 1;
+        } else if self.cursor().row + 1 < self.rows() {
+            self.set_row(self.cursor().row + 1);
         }
     }
 
     /// Next tab stop strictly right of the cursor, or the last column.
     fn next_tab_stop(&self) -> usize {
         let cols = self.cols();
-        let mut c = self.col + 1;
+        let mut c = self.cursor().col + 1;
         while c < cols {
             if self.tabs.get(c).copied().unwrap_or(false) {
                 return c;
@@ -355,25 +364,25 @@ impl Term {
             'E' => {
                 // CNL: cursor next line, column 0.
                 self.move_down(n1(0));
-                self.col = 0;
+                self.set_col(0);
                 self.wrap_pending = false;
             }
             'F' => {
                 // CPL: cursor previous line, column 0.
                 self.move_up(n1(0));
-                self.col = 0;
+                self.set_col(0);
                 self.wrap_pending = false;
             }
             'G' => {
                 // CHA: cursor to absolute column (1-based).
                 let c = n1(0).saturating_sub(1);
-                self.col = c.min(self.cols() - 1);
+                self.set_col(c.min(self.cols() - 1));
                 self.wrap_pending = false;
             }
             'd' => {
                 // VPA: cursor to absolute row (1-based).
                 let r = n1(0).saturating_sub(1);
-                self.row = r.min(self.rows() - 1);
+                self.set_row(r.min(self.rows() - 1));
                 self.wrap_pending = false;
             }
             'J' => self.erase_display(at0(params, 0)),
@@ -406,6 +415,8 @@ impl Term {
     }
 
     fn set_alt(&mut self, enter: bool) {
+        // One logical cursor across both buffers: it moves with the switch.
+        let cursor = self.cursor();
         if enter && !self.in_alt {
             // Entering: switch to a cleared alternate buffer.
             self.alt = Screen::new(self.rows(), self.cols());
@@ -414,6 +425,7 @@ impl Term {
             // Leaving: restore the primary buffer as-is.
             self.in_alt = false;
         }
+        self.active_mut().set_cursor(cursor);
         self.wrap_pending = false;
     }
 
@@ -437,28 +449,27 @@ impl Term {
     // --- cursor motion (clamped) -----------------------------------------
 
     fn move_to(&mut self, r: usize, c: usize) {
-        self.row = r.min(self.rows() - 1);
-        self.col = c.min(self.cols() - 1);
+        self.active_mut().set_cursor(Cursor { row: r, col: c });
         self.wrap_pending = false;
     }
 
     fn move_up(&mut self, n: usize) {
-        self.row = self.row.saturating_sub(n);
+        self.set_row(self.cursor().row.saturating_sub(n));
         self.wrap_pending = false;
     }
 
     fn move_down(&mut self, n: usize) {
-        self.row = (self.row + n).min(self.rows() - 1);
+        self.set_row((self.cursor().row + n).min(self.rows() - 1));
         self.wrap_pending = false;
     }
 
     fn move_right(&mut self, n: usize) {
-        self.col = (self.col + n).min(self.cols() - 1);
+        self.set_col((self.cursor().col + n).min(self.cols() - 1));
         self.wrap_pending = false;
     }
 
     fn move_left(&mut self, n: usize) {
-        self.col = self.col.saturating_sub(n);
+        self.set_col(self.cursor().col.saturating_sub(n));
         self.wrap_pending = false;
     }
 
@@ -467,7 +478,7 @@ impl Term {
     /// ED: 0 = cursor to end of screen, 1 = start of screen to cursor, 2 = all.
     fn erase_display(&mut self, mode: u16) {
         let (rows, cols) = (self.rows(), self.cols());
-        let (cr, cc) = (self.row, self.col);
+        let Cursor { row: cr, col: cc } = self.cursor();
         let blank = Cell::default();
         match mode {
             0 => {
@@ -504,7 +515,7 @@ impl Term {
     /// EL: 0 = cursor to end of line, 1 = start of line to cursor, 2 = whole line.
     fn erase_line(&mut self, mode: u16) {
         let cols = self.cols();
-        let (cr, cc) = (self.row, self.col);
+        let Cursor { row: cr, col: cc } = self.cursor();
         let blank = Cell::default();
         let range = match mode {
             0 => cc..cols,
@@ -524,7 +535,7 @@ impl Term {
     /// row's right edge.
     fn erase_chars(&mut self, n: usize) {
         let cols = self.cols();
-        let (cr, cc) = (self.row, self.col);
+        let Cursor { row: cr, col: cc } = self.cursor();
         let end = (cc + n.max(1)).min(cols);
         let blank = Cell::default();
         for c in cc..end {
@@ -549,8 +560,7 @@ impl Term {
             self.scroll_top = top;
             self.scroll_bottom = bottom;
         }
-        self.row = 0;
-        self.col = 0;
+        self.active_mut().set_cursor(Cursor::default());
         self.wrap_pending = false;
     }
 
@@ -594,28 +604,28 @@ impl Term {
     /// lines below shift down and fall off the bottom margin. No-op outside the
     /// region.
     fn insert_lines(&mut self, n: usize) {
-        if self.row < self.scroll_top || self.row > self.scroll_bottom {
+        if self.cursor().row < self.scroll_top || self.cursor().row > self.scroll_bottom {
             return;
         }
         let saved_top = self.scroll_top;
-        self.scroll_top = self.row;
+        self.scroll_top = self.cursor().row;
         self.scroll_down(n);
         self.scroll_top = saved_top;
-        self.col = 0;
+        self.set_col(0);
         self.wrap_pending = false;
     }
 
     /// DL: delete `n` lines at the cursor row, within the scroll region; lines
     /// below shift up and blanks fill the bottom margin. No-op outside region.
     fn delete_lines(&mut self, n: usize) {
-        if self.row < self.scroll_top || self.row > self.scroll_bottom {
+        if self.cursor().row < self.scroll_top || self.cursor().row > self.scroll_bottom {
             return;
         }
         let saved_top = self.scroll_top;
-        self.scroll_top = self.row;
+        self.scroll_top = self.cursor().row;
         self.scroll_up(n);
         self.scroll_top = saved_top;
-        self.col = 0;
+        self.set_col(0);
         self.wrap_pending = false;
     }
 
@@ -623,7 +633,7 @@ impl Term {
     /// right off the edge.
     fn insert_chars(&mut self, n: usize) {
         let cols = self.cols();
-        let (r, start) = (self.row, self.col);
+        let Cursor { row: r, col: start } = self.cursor();
         let n = n.min(cols - start);
         for c in (start..cols).rev() {
             let cell = if c >= start + n {
@@ -640,7 +650,7 @@ impl Term {
     /// and filling the tail with blanks.
     fn delete_chars(&mut self, n: usize) {
         let cols = self.cols();
-        let (r, start) = (self.row, self.col);
+        let Cursor { row: r, col: start } = self.cursor();
         let n = n.min(cols - start);
         for c in start..cols {
             let cell = if c + n < cols {
@@ -656,13 +666,12 @@ impl Term {
     // --- save / restore + ESC --------------------------------------------
 
     fn save_cursor(&mut self) {
-        self.saved = Some((self.row, self.col, self.style));
+        self.saved = Some((self.cursor(), self.style));
     }
 
     fn restore_cursor(&mut self) {
-        if let Some((r, c, style)) = self.saved {
-            self.row = r.min(self.rows() - 1);
-            self.col = c.min(self.cols() - 1);
+        if let Some((cursor, style)) = self.saved {
+            self.active_mut().set_cursor(cursor);
             self.style = style;
         }
         self.wrap_pending = false;

@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Breaking (0.5.0): built on `ansi` 0.3, whose `Screen` cursor and cell width
+are typed. `Term::screen()` returns that `Screen`, so the change reaches
+callers.
+
+### Changed
+- **Requires `nativelite-ansi` 0.3.** Read the cursor as
+  `term.screen().cursor()` (an `ansi::Cursor { row, col }`) instead of the
+  `.cursor` tuple field; compare widths with `ansi::CellWidth` instead of
+  `0`/`1`/`2`.
+- **One cursor.** `Term` no longer keeps its own row/column mirrored into the
+  active screen after every token: the active buffer's cursor *is* the
+  emulator cursor, and it moves with the buffer on an alt-screen switch or a
+  resize.
+
+### Fixed
+- **A synchronized-update snapshot taken in the same sequence as an alt-screen
+  switch now carries the live cursor.** `[?1049;2026h` switched buffers and
+  snapshotted mid-token, before the end-of-token mirror ran, so `screen()`
+  reported the fresh buffer's `(0,0)` for that frame while the emulator was
+  elsewhere. It is the one divergence a review of the change found; final
+  screens are checksum-identical to 0.4 on mixed benchmark streams, and a
+  cursor test suite for alt switches, save/restore across buffers, resize in
+  alt and plain sync updates passes unchanged against both versions.
+- The crate docs no longer list wide/CJK glyphs as out of scope (they are laid
+  out as two-column cells since 0.4.0).
+
 ## [0.3.0] - 2026-08-31
 
 ### Added

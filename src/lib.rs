@@ -5,7 +5,7 @@
 //! [`ansi::Screen`] you can composite and diff. [`Term::feed`] drives an
 //! internal [`ansi::Parser`] and applies the resulting tokens (cursor
 //! motion, erase, scroll region, SGR style, autowrap, alt-screen) to a cell
-//! grid. [`Term::screen`] hands back the active buffer with its cursor set,
+//! grid. [`Term::screen`] hands back the active buffer, cursor included,
 //! ready for `Screen::diff` compositing.
 //!
 //! ```
@@ -13,11 +13,12 @@
 //! t.feed(b"\x1b[2J\x1b[3;5HX");   // clear, cursor to row 3 col 5, print 'X'
 //! let s = t.screen();
 //! assert_eq!(s.cell(2, 4).ch, 'X');
-//! assert_eq!(s.cursor, (2, 5)); // cursor advanced past the 'X'
+//! assert_eq!(s.cursor(), ansi::Cursor::new(2, 5)); // advanced past the 'X'
 //! ```
 //!
-//! This is a *correct common core*, not a pixel-perfect xterm. Wide/CJK
-//! characters, sixel/images, mouse reporting, and exotic private modes are
+//! This is a *correct common core*, not a pixel-perfect xterm. Double-width
+//! (CJK, emoji) glyphs are laid out as two-column cells; combining marks,
+//! sixel/images, mouse reporting, and exotic private modes are
 //! deliberately out of scope (see the README's fidelity boundaries); the host
 //! app's answer for those is raw passthrough (atrium's "zoom").
 //!

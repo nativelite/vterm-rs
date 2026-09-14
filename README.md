@@ -25,7 +25,7 @@ t.feed(b"\x1b[2J\x1b[3;5HX");   // clear, cursor to row 3 col 5, print 'X'
 
 let s = t.screen();
 assert_eq!(s.cell(2, 4).ch, 'X');
-assert_eq!(s.cursor, (2, 5));   // cursor advanced past the 'X'
+assert_eq!(s.cursor(), ansi::Cursor::new(2, 5));   // advanced past the 'X'
 ```
 
 The whole API is four methods:
@@ -36,7 +36,7 @@ pub struct Term { /* private */ }
 impl Term {
     pub fn new(rows: usize, cols: usize) -> Self;
     pub fn feed(&mut self, bytes: &[u8]);   // drive with child output
-    pub fn screen(&self) -> &ansi::Screen;  // active buffer, cursor synced
+    pub fn screen(&self) -> &ansi::Screen;  // active buffer, cursor included
     pub fn resize(&mut self, rows: usize, cols: usize);
 }
 ```

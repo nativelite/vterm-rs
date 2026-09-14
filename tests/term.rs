@@ -7,6 +7,7 @@
 //! yield an identical final screen). Zero dev-dependencies; the built-in
 //! `#[test]` harness only.
 
+use ansi::{CellWidth, Cursor};
 use vterm::Term;
 
 /// Collect a row's characters into a `String` for readable assertions.
@@ -29,7 +30,7 @@ fn prints_text_and_advances_cursor() {
     let t = run(4, 10, b"hi");
     assert_eq!(t.screen().cell(0, 0).ch, 'h');
     assert_eq!(t.screen().cell(0, 1).ch, 'i');
-    assert_eq!(t.screen().cursor, (0, 2));
+    assert_eq!(t.screen().cursor(), Cursor::new(0, 2));
 }
 
 #[test]
@@ -37,21 +38,24 @@ fn cup_and_erase_then_print() {
     // The spec's anchor vector.
     let t = run(24, 80, b"\x1b[2J\x1b[3;5HX");
     assert_eq!(t.screen().cell(2, 4).ch, 'X');
-    assert_eq!(t.screen().cursor, (2, 5));
+    assert_eq!(t.screen().cursor(), Cursor::new(2, 5));
 }
 
 #[test]
 fn hvp_f_is_same_as_cup() {
     let t = run(10, 10, b"\x1b[2;3fZ");
     assert_eq!(t.screen().cell(1, 2).ch, 'Z');
-    assert_eq!(t.screen().cursor, (1, 3));
+    assert_eq!(t.screen().cursor(), Cursor::new(1, 3));
 }
 
 #[test]
 fn cup_defaults_and_clamps() {
     // Bare CUP homes the cursor; out-of-range clamps to the last cell.
-    assert_eq!(run(5, 5, b"\x1b[H").screen().cursor, (0, 0));
-    assert_eq!(run(5, 5, b"\x1b[99;99H").screen().cursor, (4, 4));
+    assert_eq!(run(5, 5, b"\x1b[H").screen().cursor(), Cursor::new(0, 0));
+    assert_eq!(
+        run(5, 5, b"\x1b[99;99H").screen().cursor(),
+        Cursor::new(4, 4)
+    );
 }
 
 // --- CR / LF / BS / TAB motion ---------------------------------------------
@@ -61,7 +65,7 @@ fn carriage_return_to_col0() {
     let t = run(4, 10, b"abc\rX");
     assert_eq!(t.screen().cell(0, 0).ch, 'X');
     assert_eq!(t.screen().cell(0, 1).ch, 'b');
-    assert_eq!(t.screen().cursor, (0, 1));
+    assert_eq!(t.screen().cursor(), Cursor::new(0, 1));
 }
 
 #[test]
@@ -69,27 +73,27 @@ fn line_feed_moves_down_same_column() {
     let t = run(4, 10, b"ab\nc");
     assert_eq!(t.screen().cell(0, 0).ch, 'a');
     assert_eq!(t.screen().cell(1, 2).ch, 'c');
-    assert_eq!(t.screen().cursor, (1, 3));
+    assert_eq!(t.screen().cursor(), Cursor::new(1, 3));
 }
 
 #[test]
 fn vt_and_ff_behave_like_lf() {
-    assert_eq!(run(4, 5, b"a\x0bb").screen().cursor, (1, 2));
-    assert_eq!(run(4, 5, b"a\x0cb").screen().cursor, (1, 2));
+    assert_eq!(run(4, 5, b"a\x0bb").screen().cursor(), Cursor::new(1, 2));
+    assert_eq!(run(4, 5, b"a\x0cb").screen().cursor(), Cursor::new(1, 2));
 }
 
 #[test]
 fn backspace_moves_left_and_clamps() {
     let t = run(4, 10, b"abc\x08\x08");
-    assert_eq!(t.screen().cursor, (0, 1));
-    assert_eq!(run(4, 10, b"\x08").screen().cursor, (0, 0)); // clamps at 0
+    assert_eq!(t.screen().cursor(), Cursor::new(0, 1));
+    assert_eq!(run(4, 10, b"\x08").screen().cursor(), Cursor::new(0, 0)); // clamps at 0
 }
 
 #[test]
 fn tab_advances_to_next_stop() {
     let t = run(4, 40, b"\tX");
     assert_eq!(t.screen().cell(0, 8).ch, 'X');
-    assert_eq!(t.screen().cursor, (0, 9));
+    assert_eq!(t.screen().cursor(), Cursor::new(0, 9));
     // A tab from mid-cell jumps to the next multiple of 8.
     let t2 = run(4, 40, b"abc\tY");
     assert_eq!(t2.screen().cell(0, 8).ch, 'Y');
@@ -101,24 +105,24 @@ fn tab_advances_to_next_stop() {
 fn cursor_up_down_left_right() {
     // Home, down 2, right 3, up 1, left 1 → (1, 2).
     let t = run(10, 10, b"\x1b[H\x1b[2B\x1b[3C\x1b[A\x1b[D");
-    assert_eq!(t.screen().cursor, (1, 2));
+    assert_eq!(t.screen().cursor(), Cursor::new(1, 2));
 }
 
 #[test]
 fn cnl_and_cpl_go_to_col0() {
     let t = run(10, 10, b"\x1b[5;5H\x1b[2EX");
-    assert_eq!(t.screen().cursor, (6, 1)); // down 2 lines, col 0, printed X
+    assert_eq!(t.screen().cursor(), Cursor::new(6, 1)); // down 2 lines, col 0, printed X
     assert_eq!(t.screen().cell(6, 0).ch, 'X');
     let t2 = run(10, 10, b"\x1b[5;5H\x1b[2F");
-    assert_eq!(t2.screen().cursor, (2, 0));
+    assert_eq!(t2.screen().cursor(), Cursor::new(2, 0));
 }
 
 #[test]
 fn cha_and_vpa_absolute() {
     let t = run(10, 10, b"\x1b[5;5H\x1b[3G"); // CHA col 3
-    assert_eq!(t.screen().cursor, (4, 2));
+    assert_eq!(t.screen().cursor(), Cursor::new(4, 2));
     let t2 = run(10, 10, b"\x1b[5;5H\x1b[2d"); // VPA row 2
-    assert_eq!(t2.screen().cursor, (1, 4));
+    assert_eq!(t2.screen().cursor(), Cursor::new(1, 4));
 }
 
 // --- autowrap ---------------------------------------------------------------
@@ -129,14 +133,14 @@ fn autowrap_at_right_edge() {
     let t = run(4, 3, b"abcd");
     assert_eq!(row_text(&t, 0), "abc");
     assert_eq!(t.screen().cell(1, 0).ch, 'd');
-    assert_eq!(t.screen().cursor, (1, 1));
+    assert_eq!(t.screen().cursor(), Cursor::new(1, 1));
 }
 
 #[test]
 fn pending_wrap_is_deferred() {
     // After "abc" the cursor is latched at col 2 (pending), not yet wrapped.
     let t = run(4, 3, b"abc");
-    assert_eq!(t.screen().cursor, (0, 2));
+    assert_eq!(t.screen().cursor(), Cursor::new(0, 2));
     assert_eq!(row_text(&t, 0), "abc");
 }
 
@@ -145,7 +149,7 @@ fn autowrap_off_overwrites_last_column() {
     // DECAWM off (?7l): writes past the edge overwrite the last cell.
     let t = run(4, 3, b"\x1b[?7labcd");
     assert_eq!(row_text(&t, 0), "abd");
-    assert_eq!(t.screen().cursor, (0, 2));
+    assert_eq!(t.screen().cursor(), Cursor::new(0, 2));
 }
 
 // --- scroll on LF at bottom margin -----------------------------------------
@@ -157,7 +161,7 @@ fn scroll_when_lf_at_bottom() {
     let t = run(2, 3, b"A\r\nB\r\n");
     assert_eq!(t.screen().cell(0, 0).ch, 'B');
     assert_eq!(t.screen().cell(1, 0).ch, ' ');
-    assert_eq!(t.screen().cursor, (1, 0));
+    assert_eq!(t.screen().cursor(), Cursor::new(1, 0));
 }
 
 #[test]
@@ -245,7 +249,7 @@ fn scroll_region_confines_scrolling() {
 fn scroll_region_resets_cursor_to_origin() {
     let mut t = run(6, 6, b"\x1b[3;4H");
     t.feed(b"\x1b[2;5r");
-    assert_eq!(t.screen().cursor, (0, 0));
+    assert_eq!(t.screen().cursor(), Cursor::new(0, 0));
 }
 
 // --- IL / DL ----------------------------------------------------------------
@@ -291,13 +295,13 @@ fn delete_chars_shifts_left() {
 #[test]
 fn csi_save_restore_cursor() {
     let t = run(10, 10, b"\x1b[3;4H\x1b[s\x1b[8;8H\x1b[u");
-    assert_eq!(t.screen().cursor, (2, 3));
+    assert_eq!(t.screen().cursor(), Cursor::new(2, 3));
 }
 
 #[test]
 fn esc_decsc_decrc() {
     let t = run(10, 10, b"\x1b[3;4H\x1b7\x1b[8;8H\x1b8");
-    assert_eq!(t.screen().cursor, (2, 3));
+    assert_eq!(t.screen().cursor(), Cursor::new(2, 3));
 }
 
 #[test]
@@ -321,6 +325,53 @@ fn alt_screen_hides_and_restores_primary() {
 }
 
 #[test]
+fn the_cursor_moves_with_an_alt_screen_switch_in_both_directions() {
+    let mut t = run(6, 10, b"\x1b[3;4H");
+    assert_eq!(t.screen().cursor(), Cursor::new(2, 3));
+    t.feed(b"\x1b[?1049h");
+    assert_eq!(t.screen().cursor(), Cursor::new(2, 3), "entering keeps it");
+    t.feed(b"\x1b[5;7H");
+    t.feed(b"\x1b[?1049l");
+    assert_eq!(
+        t.screen().cursor(),
+        Cursor::new(4, 6),
+        "leaving brings the alt position back to the primary"
+    );
+}
+
+#[test]
+fn a_saved_cursor_restores_across_buffers_and_a_resize_clamps_it_in_alt() {
+    let mut t = run(6, 10, b"\x1b[2;2H\x1b7\x1b[?1049h\x1b[5;5H\x1b8");
+    assert_eq!(t.screen().cursor(), Cursor::new(1, 1));
+    t.feed(b"\x1b[6;10H");
+    t.resize(3, 3);
+    assert_eq!(t.screen().cursor(), Cursor::new(2, 2));
+    t.feed(b"\x1b[?1049l");
+    assert_eq!(t.screen().cursor(), Cursor::new(2, 2));
+}
+
+#[test]
+fn a_synchronized_update_shows_the_cursor_of_the_last_whole_frame() {
+    let mut t = run(6, 10, b"\x1b[2;3H\x1b[?2026h\x1b[4;4HX");
+    assert_eq!(t.screen().cursor(), Cursor::new(1, 2));
+    t.feed(b"\x1b[?2026l");
+    assert_eq!(t.screen().cursor(), Cursor::new(3, 4));
+}
+
+#[test]
+fn entering_alt_and_opening_a_sync_update_in_one_sequence_snapshots_the_live_cursor() {
+    // `?1049;2026h` switches buffers and then snapshots, mid-token. The cursor
+    // used to be mirrored into the screen only at the end of each token, so the
+    // snapshot caught the fresh alt buffer's (0,0) while the emulator was at
+    // (2,3) — a host parked the terminal cursor at the origin for that frame.
+    let mut t = run(10, 20, b"\x1b[3;4H\x1b[?1049;2026h");
+    assert!(t.in_sync());
+    assert_eq!(t.screen().cursor(), Cursor::new(2, 3));
+    t.feed(b"\x1b[?2026l");
+    assert_eq!(t.screen().cursor(), Cursor::new(2, 3));
+}
+
+#[test]
 fn alt_screen_47_and_1047_also_work() {
     let mut t = run(4, 5, b"X");
     t.feed(b"\x1b[?47h");
@@ -336,7 +387,7 @@ fn cursor_hide_show_is_accepted() {
     // Just assert these don't corrupt the screen; visibility is host-side.
     let t = run(4, 5, b"\x1b[?25lAB\x1b[?25h");
     assert_eq!(t.screen().cell(0, 0).ch, 'A');
-    assert_eq!(t.screen().cursor, (0, 2));
+    assert_eq!(t.screen().cursor(), Cursor::new(0, 2));
 }
 
 // --- resize -----------------------------------------------------------------
@@ -351,8 +402,8 @@ fn resize_preserves_top_left_and_clamps_cursor() {
     assert_eq!(t.screen().cell(0, 0).ch, 'A');
     assert_eq!(t.screen().cell(0, 1).ch, 'B');
     // Cursor was at (0,2) after "AB"; clamps into 2x2.
-    let (r, c) = t.screen().cursor;
-    assert!(r < 2 && c < 2);
+    let Cursor { row, col } = t.screen().cursor();
+    assert!(row < 2 && col < 2);
 }
 
 // --- chunk-split invariance -------------------------------------------------
@@ -371,7 +422,7 @@ fn chunk_split_yields_identical_screen() {
     let (a, b) = (oneshot.screen(), split.screen());
     assert_eq!(a.rows(), b.rows());
     assert_eq!(a.cols(), b.cols());
-    assert_eq!(a.cursor, b.cursor);
+    assert_eq!(a.cursor(), b.cursor());
     for r in 0..a.rows() {
         for c in 0..a.cols() {
             assert_eq!(a.cell(r, c), b.cell(r, c), "mismatch at ({r},{c})");
@@ -384,7 +435,7 @@ fn chunk_split_yields_identical_screen() {
         split3.feed(chunk);
     }
     let c = split3.screen();
-    assert_eq!(a.cursor, c.cursor);
+    assert_eq!(a.cursor(), c.cursor());
     for r in 0..a.rows() {
         for col in 0..a.cols() {
             assert_eq!(a.cell(r, col), c.cell(r, col));
@@ -454,7 +505,7 @@ fn ech_blanks_cells_without_shifting() {
     // Its absence is a classic "stale text left behind" bug.
     let t = run(1, 5, b"ABCDE\x1b[1;2H\x1b[2X");
     assert_eq!(row_text(&t, 0), "A  DE");
-    assert_eq!(t.screen().cursor, (0, 1)); // cursor unmoved
+    assert_eq!(t.screen().cursor(), Cursor::new(0, 1)); // cursor unmoved
 }
 
 #[test]
@@ -533,13 +584,13 @@ fn wide_glyph_occupies_two_cells_and_advances_by_two() {
     let t = run(4, 10, "世".as_bytes());
     let s = t.screen();
     assert_eq!(s.cell(0, 0).ch, '世');
-    assert_eq!(s.cell(0, 0).width, 2, "lead cell is width 2");
+    assert_eq!(s.cell(0, 0).width, CellWidth::Wide, "lead cell is width 2");
     assert_eq!(
         s.cell(0, 1).width,
-        0,
+        CellWidth::Continuation,
         "right half is a width-0 continuation"
     );
-    assert_eq!(s.cursor, (0, 2));
+    assert_eq!(s.cursor(), Cursor::new(0, 2));
 }
 
 #[test]
@@ -549,11 +600,11 @@ fn wide_glyphs_pack_without_drift() {
     let t = run(4, 10, "世界X".as_bytes());
     let s = t.screen();
     assert_eq!(s.cell(0, 0).ch, '世');
-    assert_eq!(s.cell(0, 1).width, 0);
+    assert_eq!(s.cell(0, 1).width, CellWidth::Continuation);
     assert_eq!(s.cell(0, 2).ch, '界');
-    assert_eq!(s.cell(0, 3).width, 0);
+    assert_eq!(s.cell(0, 3).width, CellWidth::Continuation);
     assert_eq!(s.cell(0, 4).ch, 'X');
-    assert_eq!(s.cursor, (0, 5));
+    assert_eq!(s.cursor(), Cursor::new(0, 5));
 }
 
 #[test]
@@ -561,9 +612,9 @@ fn emoji_is_width_two() {
     let t = run(4, 10, "🚀".as_bytes());
     let s = t.screen();
     assert_eq!(s.cell(0, 0).ch, '🚀');
-    assert_eq!(s.cell(0, 0).width, 2);
-    assert_eq!(s.cell(0, 1).width, 0);
-    assert_eq!(s.cursor, (0, 2));
+    assert_eq!(s.cell(0, 0).width, CellWidth::Wide);
+    assert_eq!(s.cell(0, 1).width, CellWidth::Continuation);
+    assert_eq!(s.cursor(), Cursor::new(0, 2));
 }
 
 #[test]
@@ -581,7 +632,7 @@ fn wide_glyph_at_right_edge_wraps_whole_not_split() {
     );
     assert_eq!(
         s.cell(0, 4).width,
-        1,
+        CellWidth::Single,
         "last column is a blank, not a half glyph"
     );
     assert_eq!(
@@ -589,9 +640,9 @@ fn wide_glyph_at_right_edge_wraps_whole_not_split() {
         '世',
         "wide glyph wrapped whole to next line"
     );
-    assert_eq!(s.cell(1, 0).width, 2);
-    assert_eq!(s.cell(1, 1).width, 0);
-    assert_eq!(s.cursor, (1, 2));
+    assert_eq!(s.cell(1, 0).width, CellWidth::Wide);
+    assert_eq!(s.cell(1, 1).width, CellWidth::Continuation);
+    assert_eq!(s.cursor(), Cursor::new(1, 2));
 }
 
 #[test]
@@ -601,9 +652,9 @@ fn cup_then_wide_lands_at_target_and_advances() {
     let t = run(6, 12, b"\x1b[3;4H\xe4\xb8\x96"); // CUP 3;4 then 世
     let s = t.screen();
     assert_eq!(s.cell(2, 3).ch, '世');
-    assert_eq!(s.cell(2, 3).width, 2);
-    assert_eq!(s.cell(2, 4).width, 0);
-    assert_eq!(s.cursor, (2, 5));
+    assert_eq!(s.cell(2, 3).width, CellWidth::Wide);
+    assert_eq!(s.cell(2, 4).width, CellWidth::Continuation);
+    assert_eq!(s.cursor(), Cursor::new(2, 5));
 }
 
 #[test]
@@ -614,7 +665,7 @@ fn zero_width_combining_mark_is_dropped_no_drift() {
     let s = t.screen();
     assert_eq!(s.cell(0, 0).ch, 'e');
     assert_eq!(s.cell(0, 1).ch, 'x', "combining mark consumed no column");
-    assert_eq!(s.cursor, (0, 2));
+    assert_eq!(s.cursor(), Cursor::new(0, 2));
 }
 
 #[test]
@@ -627,7 +678,7 @@ fn wide_glyph_wrap_is_chunk_split_invariant() {
     }
     let s = t.screen();
     assert_eq!(s.cell(1, 0).ch, '世');
-    assert_eq!(s.cursor, (1, 2));
+    assert_eq!(s.cursor(), Cursor::new(1, 2));
 }
 
 #[test]
@@ -646,10 +697,14 @@ fn wide_glyph_at_right_edge_with_autowrap_off_is_dropped_not_split() {
         '世',
         "wide glyph must not be written at the edge"
     );
-    assert_eq!(s.cell(0, 3).width, 1, "no half-glyph lead left behind");
     assert_eq!(
-        s.cursor,
-        (0, 3),
+        s.cell(0, 3).width,
+        CellWidth::Single,
+        "no half-glyph lead left behind"
+    );
+    assert_eq!(
+        s.cursor(),
+        Cursor::new(0, 3),
         "cursor stays put when the glyph is dropped"
     );
     assert_eq!(s.cell(1, 0).ch, ' ', "nothing wrapped to the next line");
