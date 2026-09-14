@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Breaking (0.5.0): built on `ansi` 0.3, whose `Screen` cursor and cell width
+## [0.5.0] - 2026-09-14
+
+Breaking: built on `ansi` 0.3, whose `Screen` cursor and cell width
 are typed. `Term::screen()` returns that `Screen`, so the change reaches
 callers.
 
@@ -96,5 +98,6 @@ dependencies remain forbidden. Third crate in the nativelite **agent terminal**
 suite (see `roadmap/atrium-0.2-tiling.md` in `nativelite/ops`); the emulator core
 that atrium 0.2 tiled panes are built on.
 
-[Unreleased]: https://github.com/nativelite/vterm-rs/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/nativelite/vterm-rs/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/nativelite/vterm-rs/compare/v0.3.0...v0.5.0
 [0.1.0]: https://github.com/nativelite/vterm-rs/releases/tag/v0.1.0
