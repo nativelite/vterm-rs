@@ -566,38 +566,22 @@ impl Term {
 
     /// Scroll the scroll region up by `n` lines: top lines lost, blanks in at
     /// the bottom margin.
+    ///
+    /// One block move in the screen ([`Screen::scroll_rows_up`]), not a copy per
+    /// cell: this runs on every line of output, and the per-cell loop held the
+    /// emulator to ~11 MB/s on a 40x160 grid.
     fn scroll_up(&mut self, n: usize) {
         let (top, bottom) = (self.scroll_top, self.scroll_bottom);
-        let cols = self.cols();
-        let n = n.min(bottom - top + 1);
-        for r in top..=bottom {
-            for c in 0..cols {
-                let cell = if r + n <= bottom {
-                    self.active().cell(r + n, c)
-                } else {
-                    Cell::default()
-                };
-                self.active_mut().set(r, c, cell);
-            }
-        }
+        self.active_mut()
+            .scroll_rows_up(top, bottom, n, Cell::default());
     }
 
     /// Scroll the scroll region down by `n` lines: bottom lines lost, blanks in
     /// at the top margin.
     fn scroll_down(&mut self, n: usize) {
         let (top, bottom) = (self.scroll_top, self.scroll_bottom);
-        let cols = self.cols();
-        let n = n.min(bottom - top + 1);
-        for r in (top..=bottom).rev() {
-            for c in 0..cols {
-                let cell = if r >= top + n {
-                    self.active().cell(r - n, c)
-                } else {
-                    Cell::default()
-                };
-                self.active_mut().set(r, c, cell);
-            }
-        }
+        self.active_mut()
+            .scroll_rows_down(top, bottom, n, Cell::default());
     }
 
     /// IL: insert `n` blank lines at the cursor row, within the scroll region;
