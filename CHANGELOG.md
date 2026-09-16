@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **A run of plain ASCII is blitted, not written cell by cell.** Terminal output
+  is overwhelmingly plain ASCII, and every character used to cost a width
+  lookup, a buffer re-borrow, a cursor read and write, and a bounds-checked
+  cell write. A run of single-width ASCII that fits on the current row is now
+  one `Screen::copy_cells`. Anything else — a pending wrap, a wide or
+  zero-width glyph, a control byte, the last column — still goes through the
+  per-character path unchanged.
+
+  Feeding 16 MB of coloured log output at 40x160: **66.0 → 173.1 MB/s** on
+  Linux (54.0 → 89.6 on Windows). Applying tokens dropped from 0.177 s to
+  0.034 s, so parsing is now 81% of the emulator's time.
+
 ## [0.5.1] - 2026-09-15
 
 Feeding output is about 6x faster.
