@@ -58,6 +58,9 @@ pub struct Term {
     /// The last complete frame, snapshotted when a synchronized update opens.
     /// `Some` exactly while `in_sync`; `None` otherwise.
     sync_frame: Option<Screen>,
+    /// Scratch for [`Term::print_text`]'s blit, kept so a run of text costs no
+    /// allocation. Only ever used within one call.
+    blit: Vec<Cell>,
 }
 
 impl Term {
@@ -83,6 +86,7 @@ impl Term {
             dirty: false,
             in_sync: false,
             sync_frame: None,
+            blit: Vec::with_capacity(cols),
         }
     }
 
@@ -195,11 +199,7 @@ impl Term {
 
     fn apply(&mut self, tok: &Token) {
         match tok {
-            Token::Text(s) => {
-                for ch in s.chars() {
-                    self.print(ch);
-                }
-            }
+            Token::Text(s) => self.print_text(s),
             Token::Control(b) => self.control(*b),
             Token::Csi {
                 private,
@@ -211,6 +211,70 @@ impl Term {
             // Titles, DCS/SOS/PM/APC strings: nothing to render.
             Token::Osc(_) | Token::Other { .. } => {}
         }
+    }
+
+    /// Write a run of text at the cursor.
+    ///
+    /// Terminal output is overwhelmingly plain ASCII, and going through
+    /// [`Term::print`] for each character re-reads the cursor, re-borrows the
+    /// active buffer, looks up a width and bounds-checks a cell — per character.
+    /// So a run of ordinary single-width ASCII that fits on the current row is
+    /// blitted in one [`Screen::copy_cells`] with the cursor moved once.
+    ///
+    /// The fast path is deliberately narrow, and anything it does not cover
+    /// falls through to `print` unchanged: no wrap is pending, the characters
+    /// are printable ASCII (never control, never wide, never zero-width), and
+    /// the run stops one column short of the edge so the pending-wrap latch is
+    /// still decided by `print`.
+    fn print_text(&mut self, s: &str) {
+        let mut rest = s;
+        while !rest.is_empty() {
+            let n = self.plain_run(rest);
+            if n == 0 {
+                // Not the fast path: one character the careful way.
+                let ch = rest.chars().next().expect("non-empty");
+                self.print(ch);
+                rest = &rest[ch.len_utf8()..];
+                continue;
+            }
+            let style = self.style;
+            self.blit.clear();
+            self.blit.extend(
+                rest.as_bytes()[..n]
+                    .iter()
+                    .map(|&b| Cell::new(b as char, style)),
+            );
+            let screen = if self.in_alt {
+                &mut self.alt
+            } else {
+                &mut self.primary
+            };
+            let Cursor { row, col } = screen.cursor();
+            screen.copy_cells(row, col, &self.blit);
+            screen.set_cursor(Cursor { row, col: col + n });
+            rest = &rest[n..];
+        }
+    }
+
+    /// How many leading bytes of `s` the fast path in [`Term::print_text`] can
+    /// blit: printable ASCII, stopping before the last column of the row.
+    fn plain_run(&self, s: &str) -> usize {
+        if self.wrap_pending {
+            return 0;
+        }
+        let screen = if self.in_alt {
+            &self.alt
+        } else {
+            &self.primary
+        };
+        let col = screen.cursor().col;
+        // Leave the final column to `print`, which owns the pending-wrap latch.
+        let room = screen.cols().saturating_sub(col + 1);
+        s.as_bytes()
+            .iter()
+            .take(room)
+            .take_while(|&&b| (0x20..0x7f).contains(&b))
+            .count()
     }
 
     /// Write one printable character at the cursor, honoring autowrap via the

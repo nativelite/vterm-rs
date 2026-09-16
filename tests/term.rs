@@ -709,3 +709,53 @@ fn wide_glyph_at_right_edge_with_autowrap_off_is_dropped_not_split() {
     );
     assert_eq!(s.cell(1, 0).ch, ' ', "nothing wrapped to the next line");
 }
+
+// --- the ASCII blit fast path ----------------------------------------------
+
+/// A run of plain ASCII is blitted in one go rather than a character at a time,
+/// and that shortcut must be invisible: the same text, split differently or
+/// mixed with anything the fast path does not handle, lands in the same cells.
+#[test]
+fn a_blitted_ascii_run_lands_exactly_where_one_by_one_printing_would() {
+    // Whole-row run, then a wrap, then more text — across a chunk split that
+    // falls inside the run.
+    let mut split = Term::new(3, 10);
+    split.feed(b"abcde");
+    split.feed(b"fghijklm");
+    let whole = run(3, 10, b"abcdefghijklm");
+    assert_eq!(row_text(&whole, 0), "abcdefghij");
+    assert_eq!(row_text(&whole, 1), "klm       ");
+    assert_eq!(
+        row_text(&split, 0),
+        row_text(&whole, 0),
+        "chunking changes nothing"
+    );
+    assert_eq!(row_text(&split, 1), row_text(&whole, 1));
+    assert_eq!(split.screen().cursor(), whole.screen().cursor());
+
+    // Exactly filling a row latches the pending wrap instead of moving off it:
+    // the fast path stops one short of the edge and leaves that to `print`.
+    let t = run(3, 10, b"0123456789");
+    assert_eq!(row_text(&t, 0), "0123456789");
+    assert_eq!(
+        t.screen().cursor(),
+        Cursor::new(0, 9),
+        "cursor waits on the last column (deferred wrap)"
+    );
+
+    // A wide glyph between two ASCII runs: the fast path hands that character
+    // to `print` and picks up again after it.
+    let t = run(3, 10, "ab世cd".as_bytes());
+    let s = t.screen();
+    assert_eq!((s.cell(0, 0).ch, s.cell(0, 1).ch), ('a', 'b'));
+    assert_eq!(s.cell(0, 2).ch, '世');
+    assert_eq!(s.cell(0, 3).width, CellWidth::Continuation);
+    assert_eq!((s.cell(0, 4).ch, s.cell(0, 5).ch), ('c', 'd'));
+    assert_eq!(s.cursor(), Cursor::new(0, 6));
+
+    // A control byte ends a run: `\r` returns to column 0 and the text after it
+    // overwrites, including the lead half of the wide glyph — which leaves that
+    // glyph's continuation cell behind, as it always has.
+    let t = run(3, 10, "ab世cd\refg".as_bytes());
+    assert_eq!(row_text(&t, 0), "efg cd    ");
+}
