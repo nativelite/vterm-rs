@@ -1,6 +1,6 @@
 [package]
 name = "nativelite-vterm"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 rust-version = "1.70"
 description = "A minimal terminal-emulator core: child VT output bytes in, a live ansi::Screen out. Zero third-party dependencies; depends only on the nativelite ansi and uwidth crates."
@@ -13,7 +13,7 @@ categories = ["command-line-interface", "emulators"]
 # allowed are org crates (the app-variant rule): `ansi` for the screen model and
 # `uwidth` for Unicode display width — do not add anything from crates.io here.
 [dependencies]
-ansi = { package = "nativelite-ansi", version = "0.3", path = "../ansi-rs" }
+ansi = { package = "nativelite-ansi", version = "0.3.1", path = "../ansi-rs" }
 uwidth = { package = "nativelite-uwidth", version = "0.1", path = "../uwidth-rs" }
 
 [lib]

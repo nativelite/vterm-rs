@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-15
+
+Feeding output is about 6x faster.
+
+### Changed
+- **Scrolling goes through `ansi::Screen::scroll_rows_up`/`scroll_rows_down`**
+  instead of moving cells one at a time. Scrolling is what a terminal does on
+  nearly every line of output, and it was the emulator's dominant cost.
+  Feeding 16 MB of coloured, agent-style log output into one `Term`:
+
+  | grid | 0.5.0 | 0.5.1 |
+  | --- | --- | --- |
+  | 24x80 | 16.1 | 70.2 MB/s |
+  | 40x160 | 11.0 | 66.0 MB/s |
+  | 60x240 | 5.3 | 63.8 MB/s |
+
+  The cost no longer grows with the grid. Measured on Linux with atrium's
+  `cargo bench --bench terminal` (`ATRIUM_BENCH_ONLY=feed`).
+- **Requires `nativelite-ansi` 0.3.1**, which is where those two methods
+  arrived. No API change here.
+
 ## [0.5.0] - 2026-09-14
 
 Breaking: built on `ansi` 0.3, whose `Screen` cursor and cell width
