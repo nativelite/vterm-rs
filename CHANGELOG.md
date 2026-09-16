@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-09-15
+
 ### Changed
 - **A run of plain ASCII is blitted, not written cell by cell.** Terminal output
   is overwhelmingly plain ASCII, and every character used to cost a width
