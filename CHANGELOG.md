@@ -71,6 +71,22 @@ callers.
 - The crate docs no longer list wide/CJK glyphs as out of scope (they are laid
   out as two-column cells since 0.4.0).
 
+## [0.4.0] - 2026-09-12
+
+A cursor semantics change: a wide glyph now advances the cursor by two.
+
+### Added
+- **Width-aware `print`.** A wide character (CJK, fullwidth, emoji) is laid out
+  as a two-column cell: a lead cell plus a continuation cell. A wide glyph that
+  does not fit at the right edge wraps whole, or is dropped when autowrap is off,
+  and is never split. Widths come from the new `nativelite-uwidth` crate.
+- **`Term::take_dirty`**: whether the screen changed since the last call,
+  clearing the flag, so a host can skip compositing an unchanged pane.
+
+### Changed
+- **Requires `nativelite-ansi` 0.2** (for `Cell.width`) and depends on
+  `nativelite-uwidth` 0.1.
+
 ## [0.3.0] - 2026-08-31
 
 ### Added
@@ -134,6 +150,9 @@ dependencies remain forbidden. Third crate in the nativelite **agent terminal**
 suite (see `roadmap/atrium-0.2-tiling.md` in `nativelite/ops`); the emulator core
 that atrium 0.2 tiled panes are built on.
 
-[Unreleased]: https://github.com/nativelite/vterm-rs/compare/v0.5.0...HEAD
-[0.5.0]: https://github.com/nativelite/vterm-rs/compare/v0.3.0...v0.5.0
-[0.1.0]: https://github.com/nativelite/vterm-rs/releases/tag/v0.1.0
+[Unreleased]: https://github.com/nativelite/vterm-rs/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/nativelite/vterm-rs/compare/v0.5.1...v0.5.2
+[0.5.1]: https://github.com/nativelite/vterm-rs/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/nativelite/vterm-rs/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/nativelite/vterm-rs/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/nativelite/vterm-rs/releases/tag/v0.3.0
