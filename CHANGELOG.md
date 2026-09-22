@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-09-22
+
+Feeding bytes to the emulator is 1.76x faster, with no API change.
+
+### Changed
+- **`Term::feed` consumes `ansi::Parser::feed_with`** (borrowed events) instead
+  of `feed` (a `Vec<Token>` per chunk). Nothing is allocated per token: text
+  runs are decoded straight off the caller's buffer with `ansi::Utf8Decoder`,
+  and a window title or DCS payload is no longer built into a `String` only to
+  be discarded unread.
+  - Measured with foldwave's `fwbench parse` (agent-like output, 64 MiB, 5
+    reps, one i5-12600K P-core, quiet machine): **120.6 -> 212.0 MiB/s**. On
+    six P-cores, 623.8 -> 1,158.2 MiB/s aggregate.
+  - `Term`'s public API is unchanged, and the 60 behaviour tests pass
+    untouched: chunk splits, malformed UTF-8 and partial sequences all behave
+    as before.
+
+### Dependencies
+- `nativelite-ansi` 0.4.0 (was 0.3.1), for `feed_with` and `Utf8Decoder`.
+
 ## [0.5.2] - 2026-09-15
 
 ### Changed
@@ -150,7 +170,8 @@ dependencies remain forbidden. Third crate in the nativelite **agent terminal**
 suite (see `roadmap/atrium-0.2-tiling.md` in `nativelite/ops`); the emulator core
 that atrium 0.2 tiled panes are built on.
 
-[Unreleased]: https://github.com/nativelite/vterm-rs/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/nativelite/vterm-rs/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/nativelite/vterm-rs/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/nativelite/vterm-rs/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/nativelite/vterm-rs/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/nativelite/vterm-rs/compare/v0.4.0...v0.5.0

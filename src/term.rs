@@ -12,7 +12,7 @@
 //! (cursor motion, CUP), we treat a 0 from the parser as that default; where
 //! it defaults to 0 (erase/SGR selectors), 0 is used directly.
 
-use ansi::{Cell, Cursor, Parser, Screen, Style, Token};
+use ansi::{Cell, Cursor, Event, Parser, Screen, Style, Utf8Decoder};
 
 /// A minimal VT100/ECMA-48 terminal emulator over an [`ansi::Screen`].
 pub struct Term {
@@ -43,6 +43,9 @@ pub struct Term {
     /// The parser driving `feed`; one per stream so mid-sequence chunk splits
     /// are handled by `ansi`.
     parser: Parser,
+    /// Decodes text runs, which `ansi::Event` hands over as raw bytes, and
+    /// carries a character split across chunks. Allocates nothing.
+    decoder: Utf8Decoder,
     /// Set to `true` by `feed` (non-empty bytes) and `resize`; reset and
     /// returned by `take_dirty`. Lets callers skip a composite when nothing
     /// has changed since the last rendered frame.
@@ -83,6 +86,7 @@ impl Term {
             autowrap: true,
             cursor_visible: true,
             parser: Parser::new(),
+            decoder: Utf8Decoder::new(),
             dirty: false,
             in_sync: false,
             sync_frame: None,
@@ -98,10 +102,13 @@ impl Term {
             return;
         }
         self.dirty = true;
-        let tokens = self.parser.feed(bytes);
-        for tok in tokens {
-            self.apply(&tok);
-        }
+        // The parser and decoder are lifted out for the call so the callback
+        // can borrow the rest of `self`; both are restored before returning.
+        let mut parser = std::mem::take(&mut self.parser);
+        let mut decoder = std::mem::take(&mut self.decoder);
+        parser.feed_with(bytes, |event| self.apply(event, &mut decoder));
+        self.parser = parser;
+        self.decoder = decoder;
     }
 
     /// Returns `true` if any bytes have been fed (or a resize has occurred)
@@ -197,19 +204,26 @@ impl Term {
         self.active_mut().set_cursor(Cursor { row, col });
     }
 
-    fn apply(&mut self, tok: &Token) {
-        match tok {
-            Token::Text(s) => self.print_text(s),
-            Token::Control(b) => self.control(*b),
-            Token::Csi {
+    fn apply(&mut self, event: Event<'_>, decoder: &mut Utf8Decoder) {
+        if let Event::Text(bytes) = event {
+            decoder.decode(bytes, |s| self.print_text(s));
+            return;
+        }
+        // Anything but text ends a run, so a half-finished character can never
+        // be completed: render it as U+FFFD, exactly as `ansi::Parser::feed`
+        // would have.
+        decoder.flush_incomplete(|s| self.print_text(s));
+        match event {
+            Event::Control(b) => self.control(b),
+            Event::Csi {
                 private,
                 params,
                 final_byte,
                 ..
-            } => self.csi(*private, params, *final_byte),
-            Token::Esc { final_byte, .. } => self.esc(*final_byte),
+            } => self.csi(private.map(char::from), params, char::from(final_byte)),
+            Event::Esc { final_byte, .. } => self.esc(final_byte),
             // Titles, DCS/SOS/PM/APC strings: nothing to render.
-            Token::Osc(_) | Token::Other { .. } => {}
+            Event::Text(_) | Event::Osc(_) | Event::Other { .. } => {}
         }
     }
 
