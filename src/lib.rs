@@ -28,4 +28,4 @@
 
 mod term;
 
-pub use term::Term;
+pub use term::{RestoreError, Term};

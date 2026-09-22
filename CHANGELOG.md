@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Checkpoints: `Term::checkpoint()` and `Term::restore()`.** A terminal's
+  whole state as bytes and back: both screens, cursor, style, scroll region,
+  tab stops, saved cursor, modes and a synchronized update in progress.
+  Feeding a restored `Term` the rest of a stream ends in exactly the state of
+  one that never stopped — tested at every split point of a stream exercising
+  all of that state, and across chunked feeds.
+  - Taken only between sequences (`Term::can_checkpoint()`, via
+    `ansi::Parser::is_ground()`), so the tokenizer never needs saving.
+  - Versioned, run-length encoded, and validated on restore: damaged bytes are
+    an error (`RestoreError`), never a panic.
+  - Measured (release, i5-12600K): 24x80 full of coloured build output,
+    19.7 KB, save 23 us, restore 63 us; 50x200, 42.1 KB, 111 us / 93 us.
+
 ## [0.5.3] - 2026-09-22
 
 Feeding bytes to the emulator is 1.76x faster, with no API change.

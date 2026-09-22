@@ -14,6 +14,9 @@
 
 use ansi::{Cell, Cursor, Event, Parser, Screen, Style, Utf8Decoder};
 
+mod checkpoint;
+pub use checkpoint::RestoreError;
+
 /// A minimal VT100/ECMA-48 terminal emulator over an [`ansi::Screen`].
 pub struct Term {
     /// The primary (normal) screen buffer.
