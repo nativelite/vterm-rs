@@ -791,3 +791,39 @@ fn a_character_split_across_chunks_is_not_skipped_by_the_ascii_path() {
     assert_eq!(t.screen().cell(0, 0).ch, 'b');
     assert_eq!(t.screen().cell(0, 1).ch, '\u{FFFD}');
 }
+
+#[test]
+fn history_holds_what_scrolls_off_and_survives_a_resize() {
+    let mut t = Term::with_history(3, 12, 100);
+    for k in 0..10 {
+        t.feed(format!("line {k}\r\n").as_bytes());
+    }
+    // On screen: line 8, line 9, and the empty line the cursor sits on.
+    let sb = t.scrollback();
+    assert_eq!(sb.history_len(), 8);
+    let text =
+        |s: &ansi::Screen, age| -> String { (0..6).map(|c| s.history_cell(age, c).ch).collect() };
+    assert_eq!(text(sb, 0), "line 7");
+    assert_eq!(text(sb, 7), "line 0");
+    t.resize(4, 20);
+    assert_eq!(
+        t.scrollback().history_len(),
+        8,
+        "a resize keeps the history"
+    );
+    assert_eq!(text(t.scrollback(), 0), "line 7");
+    // ED 3 erases it; the alternate screen never adds to it.
+    t.feed(b"\x1b[3J");
+    assert_eq!(t.scrollback().history_len(), 0);
+    t.feed(b"\x1b[?1049h");
+    assert!(t.in_alternate_screen());
+    for k in 0..10 {
+        t.feed(format!("alt {k}\r\n").as_bytes());
+    }
+    t.feed(b"\x1b[?1049l");
+    assert_eq!(t.scrollback().history_len(), 0);
+    // Without history nothing is kept.
+    let mut plain = Term::new(3, 12);
+    plain.feed(b"a\r\nb\r\nc\r\nd\r\n");
+    assert_eq!(plain.scrollback().history_len(), 0);
+}

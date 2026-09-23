@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`ansi::Utf8Decoder::is_idle`): 570 -> 631 MiB/s.
 
 ### Added
+- **Scrollback: `Term::with_history(rows, cols, lines)`** keeps up to `lines`
+  lines scrolled off the primary screen (`ansi::Screen::with_history`), read
+  through `Term::scrollback()`. It survives a resize; `ESC [3J` erases it; the
+  alternate screen and scroll regions never add to it. `in_alternate_screen()`
+  tells a host when scrolling back does not apply. Synchronized-output
+  snapshots copy the visible rows only.
 - **New line mode (LNM, `CSI 20 h` / `CSI 20 l`)**: while set, LF, VT and FF
   also return to column 0. For hosts feeding output from plain pipes, where no
   tty turns LF into CR LF. Kept in checkpoints (flag bit 7; older checkpoints

@@ -19,8 +19,11 @@ pub use checkpoint::RestoreError;
 
 /// A minimal VT100/ECMA-48 terminal emulator over an [`ansi::Screen`].
 pub struct Term {
-    /// The primary (normal) screen buffer.
+    /// The primary (normal) screen buffer. It carries the scrollback, if any
+    /// ([`Term::with_history`]).
     primary: Screen,
+    /// Scrollback capacity in lines (0: none).
+    history: usize,
     /// The alternate screen buffer, used while an app enters alt-screen mode
     /// (`?1049h`/`?47h`/`?1047h`). Kept the same size as `primary`.
     alt: Screen,
@@ -76,10 +79,20 @@ impl Term {
     /// at the origin, full-height scroll region, default tab stops every 8
     /// columns, autowrap on, cursor visible.
     pub fn new(rows: usize, cols: usize) -> Self {
+        Term::with_history(rows, cols, 0)
+    }
+
+    /// Like [`Term::new`], keeping up to `lines` lines that scroll off the
+    /// top of the primary screen, readable through [`Term::scrollback`].
+    /// Scrolling costs the same with or without it: the history is a ring of
+    /// the screen's own rows (`ansi::Screen::with_history`), never a copy.
+    /// The alternate screen, and scroll regions, keep no history.
+    pub fn with_history(rows: usize, cols: usize, lines: usize) -> Self {
         let rows = rows.max(1);
         let cols = cols.max(1);
         Term {
-            primary: Screen::new(rows, cols),
+            primary: Screen::with_history(rows, cols, lines),
+            history: lines,
             alt: Screen::new(rows, cols),
             in_alt: false,
             style: Style::default(),
@@ -136,6 +149,19 @@ impl Term {
         }
     }
 
+    /// The primary screen, whose history ([`ansi::Screen::history_len`],
+    /// [`ansi::Screen::history_cell`]) holds the lines scrolled off its top.
+    /// Empty unless made with [`Term::with_history`].
+    pub fn scrollback(&self) -> &Screen {
+        &self.primary
+    }
+
+    /// True while the alternate screen is active (full-screen programs), where
+    /// scrolling back through history does not apply.
+    pub fn in_alternate_screen(&self) -> bool {
+        self.in_alt
+    }
+
     /// True while the child is inside a synchronized update (DEC mode 2026):
     /// it has emitted `?2026h` and not yet the matching `?2026l`. During this
     /// window [`Term::screen`] returns the last complete frame. Exposed so a
@@ -151,8 +177,12 @@ impl Term {
         let rows = rows.max(1);
         let cols = cols.max(1);
         let cursor = self.cursor();
-        let old_primary = std::mem::replace(&mut self.primary, Screen::new(rows, cols));
+        let old_primary = std::mem::replace(
+            &mut self.primary,
+            Screen::with_history(rows, cols, self.history),
+        );
         let old_alt = std::mem::replace(&mut self.alt, Screen::new(rows, cols));
+        self.primary.copy_history_from(&old_primary);
         copy_top_left(&old_primary, &mut self.primary);
         copy_top_left(&old_alt, &mut self.alt);
         self.scroll_top = self.scroll_top.min(rows - 1);
@@ -539,7 +569,8 @@ impl Term {
     fn set_sync(&mut self, open: bool) {
         if open {
             if !self.in_sync {
-                self.sync_frame = Some(self.active().clone());
+                // The visible rows only: never a copy of the scrollback.
+                self.sync_frame = Some(self.active().visible());
                 self.in_sync = true;
             }
         } else {
@@ -610,6 +641,8 @@ impl Term {
                     }
                 }
             }
+            // ED 3: erase the scrollback (xterm), leaving the screen.
+            3 => self.primary.clear_history(),
             _ => {}
         }
     }
