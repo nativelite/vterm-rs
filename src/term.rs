@@ -211,13 +211,19 @@ impl Term {
 
     fn apply(&mut self, event: Event<'_>, decoder: &mut Utf8Decoder) {
         if let Event::Text(bytes) = event {
-            decoder.decode(bytes, |s| self.print_text(s));
+            // Most output is plain ASCII: with no character half-received, it
+            // needs no decoding at all (a word-wide `is_ascii` decides).
+            if decoder.is_idle() && bytes.is_ascii() {
+                self.print_run(bytes);
+            } else {
+                decoder.decode(bytes, |s| self.print_run(s.as_bytes()));
+            }
             return;
         }
         // Anything but text ends a run, so a half-finished character can never
         // be completed: render it as U+FFFD, exactly as `ansi::Parser::feed`
         // would have.
-        decoder.flush_incomplete(|s| self.print_text(s));
+        decoder.flush_incomplete(|s| self.print_run(s.as_bytes()));
         match event {
             Event::Control(b) => self.control(b),
             Event::Csi {
@@ -245,15 +251,21 @@ impl Term {
     /// are printable ASCII (never control, never wide, never zero-width), and
     /// the run stops one column short of the edge so the pending-wrap latch is
     /// still decided by `print`.
-    fn print_text(&mut self, s: &str) {
-        let mut rest = s;
+    ///
+    /// `text` is valid UTF-8: either decoded, or plain ASCII passed through.
+    fn print_run(&mut self, text: &[u8]) {
+        let mut rest = text;
         while !rest.is_empty() {
             let n = self.plain_run(rest);
             if n == 0 {
                 // Not the fast path: one character the careful way.
-                let ch = rest.chars().next().expect("non-empty");
+                let len = utf8_len(rest[0]).min(rest.len());
+                let ch = std::str::from_utf8(&rest[..len])
+                    .ok()
+                    .and_then(|s| s.chars().next())
+                    .unwrap_or(char::REPLACEMENT_CHARACTER);
                 self.print(ch);
-                rest = &rest[ch.len_utf8()..];
+                rest = &rest[len..];
                 continue;
             }
             let style = self.style;
@@ -263,15 +275,15 @@ impl Term {
                 &mut self.primary
             };
             let Cursor { row, col } = screen.cursor();
-            screen.write_ascii(row, col, &rest.as_bytes()[..n], style);
+            screen.write_ascii(row, col, &rest[..n], style);
             screen.set_cursor(Cursor { row, col: col + n });
             rest = &rest[n..];
         }
     }
 
-    /// How many leading bytes of `s` the fast path in [`Term::print_text`] can
+    /// How many leading bytes of `s` the fast path in [`Term::print_run`] can
     /// write: printable ASCII, stopping before the last column of the row.
-    fn plain_run(&self, s: &str) -> usize {
+    fn plain_run(&self, s: &[u8]) -> usize {
         if self.wrap_pending {
             return 0;
         }
@@ -283,7 +295,7 @@ impl Term {
         let col = screen.cursor().col;
         // Leave the final column to `print`, which owns the pending-wrap latch.
         let room = screen.cols().saturating_sub(col + 1);
-        let head = &s.as_bytes()[..room.min(s.len())];
+        let head = &s[..room.min(s.len())];
         // Text reaches here from the parser, which never passes C0 controls or
         // DEL in a text run, so "printable ASCII" is just "ASCII": checked a
         // word at a time by `is_ascii`, byte by byte only when it fails.
@@ -786,5 +798,16 @@ fn copy_top_left(src: &Screen, dst: &mut Screen) {
         for c in 0..cols {
             dst.set(r, c, src.cell(r, c));
         }
+    }
+}
+
+/// Length of the UTF-8 sequence a lead byte starts (1 for ASCII and for bytes
+/// that cannot lead, which valid input never has here).
+fn utf8_len(lead: u8) -> usize {
+    match lead {
+        0xC0..=0xDF => 2,
+        0xE0..=0xEF => 3,
+        0xF0..=0xF7 => 4,
+        _ => 1,
     }
 }

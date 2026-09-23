@@ -776,3 +776,18 @@ fn new_line_mode_makes_lf_return_to_column_zero() {
     t.feed(b"\x1b[20h\x1b[4lx\ny");
     assert_eq!(t.screen().cell(1, 0).ch, 'y');
 }
+
+#[test]
+fn a_character_split_across_chunks_is_not_skipped_by_the_ascii_path() {
+    // The é arrives in two feeds; the ASCII after it must not overtake it.
+    let mut t = Term::new(2, 10);
+    t.feed(b"caf\xC3");
+    t.feed(b"\xA9 ok");
+    let row: String = (0..7).map(|c| t.screen().cell(0, c).ch).collect();
+    assert_eq!(row, "café ok");
+    // A truncated character before a control still renders as U+FFFD.
+    let mut t = Term::new(2, 10);
+    t.feed(b"a\xE2\x82\rb");
+    assert_eq!(t.screen().cell(0, 0).ch, 'b');
+    assert_eq!(t.screen().cell(0, 1).ch, '\u{FFFD}');
+}

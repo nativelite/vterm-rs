@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The ASCII check on text runs is a word-wide `is_ascii`**, since the parser
   never passes controls in text. With `ansi`'s faster text skip, `Term::feed`
   is now 570 MiB/s on the same workload.
+- **Plain ASCII text skips UTF-8 decoding** when no character is half-received
+  (`ansi::Utf8Decoder::is_idle`): 570 -> 631 MiB/s.
 
 ### Added
 - **New line mode (LNM, `CSI 20 h` / `CSI 20 l`)**: while set, LF, VT and FF
