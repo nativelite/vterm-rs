@@ -178,3 +178,13 @@ fn measure_checkpoint_cost() {
         );
     }
 }
+
+#[test]
+fn new_line_mode_survives_a_checkpoint() {
+    let mut t = Term::new(4, 10);
+    t.feed(b"\x1b[20hab");
+    let ck = t.checkpoint().expect("at ground");
+    let mut r = Term::restore(&ck).expect("restore");
+    r.feed(b"\ncd");
+    assert_eq!(r.screen().cell(1, 0).ch, 'c', "LNM still on after restore");
+}

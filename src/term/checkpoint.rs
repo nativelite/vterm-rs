@@ -63,7 +63,8 @@ impl Term {
             | (self.cursor_visible as u8) << 3
             | (self.in_sync as u8) << 4
             | (self.saved.is_some() as u8) << 5
-            | (self.sync_frame.is_some() as u8) << 6;
+            | (self.sync_frame.is_some() as u8) << 6
+            | (self.newline_mode as u8) << 7;
         w.push(flags);
         put_style(&mut w, &self.style);
         put_u32(&mut w, self.scroll_top as u32);
@@ -149,6 +150,9 @@ impl Term {
         term.wrap_pending = bit(1);
         term.autowrap = bit(2);
         term.cursor_visible = bit(3);
+        // Bit 7 was always 0 before LNM existed, so older checkpoints restore
+        // with the mode off, as they were taken.
+        term.newline_mode = bit(7);
         term.in_sync = bit(4);
         term.style = style;
         term.scroll_top = scroll_top;

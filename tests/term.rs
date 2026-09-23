@@ -759,3 +759,20 @@ fn a_blitted_ascii_run_lands_exactly_where_one_by_one_printing_would() {
     let t = run(3, 10, "ab世cd\refg".as_bytes());
     assert_eq!(row_text(&t, 0), "efg cd    ");
 }
+
+#[test]
+fn new_line_mode_makes_lf_return_to_column_zero() {
+    let mut t = Term::new(4, 10);
+    t.feed(b"ab\ncd");
+    assert_eq!(t.screen().cell(1, 2).ch, 'c', "plain LF keeps the column");
+    let mut t = Term::new(4, 10);
+    t.feed(b"\x1b[20hab\ncd\x0bef");
+    assert_eq!(t.screen().cell(1, 0).ch, 'c', "LNM: LF also returns");
+    assert_eq!(t.screen().cell(2, 0).ch, 'e', "VT too");
+    t.feed(b"\x1b[20l\ngh");
+    assert_eq!(t.screen().cell(3, 2).ch, 'g', "reset: plain LF again");
+    // Other ANSI modes are ignored, and do not touch LNM.
+    let mut t = Term::new(4, 10);
+    t.feed(b"\x1b[20h\x1b[4lx\ny");
+    assert_eq!(t.screen().cell(1, 0).ch, 'y');
+}

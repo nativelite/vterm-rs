@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of through a scratch buffer of cells. With `ansi`'s lazy row
   clearing and faster UTF-8 decoding, `Term::feed` on agent output (177x47)
   went from 188 to 330 MiB/s.
+- **The ASCII check on text runs is a word-wide `is_ascii`**, since the parser
+  never passes controls in text. With `ansi`'s faster text skip, `Term::feed`
+  is now 570 MiB/s on the same workload.
+
+### Added
+- **New line mode (LNM, `CSI 20 h` / `CSI 20 l`)**: while set, LF, VT and FF
+  also return to column 0. For hosts feeding output from plain pipes, where no
+  tty turns LF into CR LF. Kept in checkpoints (flag bit 7; older checkpoints
+  restore with it off).
 
 ### Added
 - **Checkpoints: `Term::checkpoint()` and `Term::restore()`.** A terminal's

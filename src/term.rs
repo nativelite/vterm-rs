@@ -43,6 +43,11 @@ pub struct Term {
     /// Cursor visibility (DECTCEM, `?25h`/`?25l`). Tracked for the host; the
     /// screen cursor position is always synced regardless.
     cursor_visible: bool,
+    /// Line feed / new line mode (LNM, ANSI mode 20, `CSI 20 h`/`l`): while
+    /// set, LF, VT and FF also return the cursor to column 0. A host that
+    /// feeds output from plain pipes (no tty to turn LF into CR LF) sets it
+    /// instead of rewriting every byte.
+    pub(crate) newline_mode: bool,
     /// The parser driving `feed`; one per stream so mid-sequence chunk splits
     /// are handled by `ansi`.
     parser: Parser,
@@ -85,6 +90,7 @@ impl Term {
             wrap_pending: false,
             autowrap: true,
             cursor_visible: true,
+            newline_mode: false,
             parser: Parser::new(),
             decoder: Utf8Decoder::new(),
             dirty: false,
@@ -277,11 +283,18 @@ impl Term {
         let col = screen.cursor().col;
         // Leave the final column to `print`, which owns the pending-wrap latch.
         let room = screen.cols().saturating_sub(col + 1);
-        s.as_bytes()
-            .iter()
-            .take(room)
-            .take_while(|&&b| (0x20..0x7f).contains(&b))
-            .count()
+        let head = &s.as_bytes()[..room.min(s.len())];
+        // Text reaches here from the parser, which never passes C0 controls or
+        // DEL in a text run, so "printable ASCII" is just "ASCII": checked a
+        // word at a time by `is_ascii`, byte by byte only when it fails.
+        debug_assert!(!head.iter().any(|&b| b < 0x20 || b == 0x7F));
+        if head.is_ascii() {
+            head.len()
+        } else {
+            head.iter()
+                .take_while(|&&b| (0x20..0x7f).contains(&b))
+                .count()
+        }
     }
 
     /// Write one printable character at the cursor, honoring autowrap via the
@@ -359,8 +372,12 @@ impl Term {
                 self.wrap_pending = false;
             }
             b'\n' | 0x0b | 0x0c => {
-                // LF, VT, FF: move down one line, scrolling at the margin.
+                // LF, VT, FF: move down one line, scrolling at the margin
+                // (and to column 0 in new line mode).
                 self.line_feed();
+                if self.newline_mode {
+                    self.set_col(0);
+                }
                 self.wrap_pending = false;
             }
             0x08 => {
@@ -460,6 +477,8 @@ impl Term {
             'K' => self.erase_line(at0(params, 0)),
             'X' => self.erase_chars(n1(0)),
             'm' => self.style.apply_sgr(params),
+            // SM / RM: of the ANSI modes only LNM (20) changes rendering.
+            'h' | 'l' if params.contains(&20) => self.newline_mode = final_byte == 'h',
             'r' => self.set_scroll_region(params),
             'L' => self.insert_lines(n1(0)),
             'M' => self.delete_lines(n1(0)),
