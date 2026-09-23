@@ -64,9 +64,6 @@ pub struct Term {
     /// The last complete frame, snapshotted when a synchronized update opens.
     /// `Some` exactly while `in_sync`; `None` otherwise.
     sync_frame: Option<Screen>,
-    /// Scratch for [`Term::print_text`]'s blit, kept so a run of text costs no
-    /// allocation. Only ever used within one call.
-    blit: Vec<Cell>,
 }
 
 impl Term {
@@ -93,7 +90,6 @@ impl Term {
             dirty: false,
             in_sync: false,
             sync_frame: None,
-            blit: Vec::with_capacity(cols),
         }
     }
 
@@ -236,7 +232,7 @@ impl Term {
     /// [`Term::print`] for each character re-reads the cursor, re-borrows the
     /// active buffer, looks up a width and bounds-checks a cell — per character.
     /// So a run of ordinary single-width ASCII that fits on the current row is
-    /// blitted in one [`Screen::copy_cells`] with the cursor moved once.
+    /// written in one [`Screen::write_ascii`] with the cursor moved once.
     ///
     /// The fast path is deliberately narrow, and anything it does not cover
     /// falls through to `print` unchanged: no wrap is pending, the characters
@@ -255,26 +251,20 @@ impl Term {
                 continue;
             }
             let style = self.style;
-            self.blit.clear();
-            self.blit.extend(
-                rest.as_bytes()[..n]
-                    .iter()
-                    .map(|&b| Cell::new(b as char, style)),
-            );
             let screen = if self.in_alt {
                 &mut self.alt
             } else {
                 &mut self.primary
             };
             let Cursor { row, col } = screen.cursor();
-            screen.copy_cells(row, col, &self.blit);
+            screen.write_ascii(row, col, &rest.as_bytes()[..n], style);
             screen.set_cursor(Cursor { row, col: col + n });
             rest = &rest[n..];
         }
     }
 
     /// How many leading bytes of `s` the fast path in [`Term::print_text`] can
-    /// blit: printable ASCII, stopping before the last column of the row.
+    /// write: printable ASCII, stopping before the last column of the row.
     fn plain_run(&self, s: &str) -> usize {
         if self.wrap_pending {
             return 0;

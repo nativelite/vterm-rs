@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Plain text is written straight into the screen** (`ansi::Screen::write_ascii`)
+  instead of through a scratch buffer of cells. With `ansi`'s lazy row
+  clearing and faster UTF-8 decoding, `Term::feed` on agent output (177x47)
+  went from 188 to 330 MiB/s.
+
 ### Added
 - **Checkpoints: `Term::checkpoint()` and `Term::restore()`.** A terminal's
   whole state as bytes and back: both screens, cursor, style, scroll region,
