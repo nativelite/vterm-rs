@@ -84,8 +84,9 @@ impl Term {
 
     /// Like [`Term::new`], keeping up to `lines` lines that scroll off the
     /// top of the primary screen, readable through [`Term::scrollback`].
-    /// Scrolling costs the same with or without it: the history is a ring of
-    /// the screen's own rows (`ansi::Screen::with_history`), never a copy.
+    /// Each line is stored compactly as it leaves (`ansi::Screen::with_history`:
+    /// its text plus runs of style, not a row of cells), so memory follows
+    /// the text held rather than `lines x cols`.
     /// The alternate screen, and scroll regions, keep no history.
     pub fn with_history(rows: usize, cols: usize, lines: usize) -> Self {
         let rows = rows.max(1);
@@ -150,7 +151,7 @@ impl Term {
     }
 
     /// The primary screen, whose history ([`ansi::Screen::history_len`],
-    /// [`ansi::Screen::history_cell`]) holds the lines scrolled off its top.
+    /// [`ansi::Screen::history_row`]) holds the lines scrolled off its top.
     /// Empty unless made with [`Term::with_history`].
     pub fn scrollback(&self) -> &Screen {
         &self.primary
