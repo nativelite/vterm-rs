@@ -1,5 +1,5 @@
 //! vterm: a minimal terminal-emulator core, on the Rust standard library
-//! plus the nativelite `ansi` crate alone. Zero third-party dependencies.
+//! plus the nativelite `ansi` and `uwidth` crates. Zero third-party dependencies.
 //!
 //! One concern: turn a child process's VT output byte stream into a live
 //! [`ansi::Screen`] you can composite and diff. [`Term::feed`] drives an
