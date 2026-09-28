@@ -24,7 +24,7 @@ use ansi::{Cell, CellWidth, Color, Cursor, Parser, Screen, Style, Utf8Decoder};
 use std::fmt;
 
 const MAGIC: &[u8; 4] = b"VTCK";
-const VERSION: u16 = 2;
+const VERSION: u16 = 3;
 /// Refuse to allocate grids larger than this when restoring untrusted bytes.
 const MAX_CELLS: usize = 16 * 1024 * 1024;
 
@@ -96,17 +96,23 @@ impl Term {
     /// it the same bytes afterwards gives the same result as feeding the
     /// original. Bad input is an error, never a panic.
     pub fn restore(bytes: &[u8]) -> Result<Term, RestoreError> {
-        let mut r = Reader { bytes, at: 0 };
+        let mut r = Reader {
+            bytes,
+            at: 0,
+            version: 0,
+        };
         if r.take(4)? != MAGIC {
             return Err(RestoreError("not a checkpoint"));
         }
         let version = r.u16()?;
-        if version != 1 && version != VERSION {
+        if !(1..=VERSION).contains(&version) {
             return Err(RestoreError("unsupported version"));
         }
+        r.version = version;
         let flags = r.u8()?;
         // Version 1 had one flags byte; its checkpoints restore with the
-        // later modes off, as they were when taken.
+        // later modes off, as they were when taken. Version 3 added wrap marks
+        // to each screen.
         let flags2 = if version >= 2 { r.u8()? } else { 0 };
         let bit = |n: u8| flags & (1 << n) != 0;
         let style = r.style()?;
@@ -251,11 +257,21 @@ fn put_screen(w: &mut Vec<u8>, s: &Screen) {
         put_u32(w, n);
         put_cell(w, &c);
     }
+    // Version 3: which rows wrapped onto the next, a bit per row.
+    for chunk in (0..s.rows()).collect::<Vec<_>>().chunks(8) {
+        let mut byte = 0u8;
+        for (i, &r) in chunk.iter().enumerate() {
+            byte |= (s.row_wrapped(r) as u8) << i;
+        }
+        w.push(byte);
+    }
 }
 
 struct Reader<'a> {
     bytes: &'a [u8],
     at: usize,
+    /// The checkpoint's format version, once read.
+    version: u16,
 }
 
 impl<'a> Reader<'a> {
@@ -345,6 +361,13 @@ impl<'a> Reader<'a> {
             filled += n;
         }
         screen.set_cursor(Cursor::new(crow, ccol));
+        // Versions before 3 carried no wrap marks: every row unwrapped.
+        if self.version >= 3 {
+            let marks = self.take(rows.div_ceil_compat(8))?;
+            for r in 0..rows {
+                screen.set_row_wrapped(r, marks[r / 8] & (1 << (r % 8)) != 0);
+            }
+        }
         Ok(screen)
     }
 }

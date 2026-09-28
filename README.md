@@ -86,6 +86,10 @@ The honest MVP, enough to host a shell and the common agent TUIs correctly:
 - **Synchronized output:** `?2026h`/`?2026l`; see `in_sync` above.
 - **New-line mode:** `LNM` (`CSI 20 h`/`l`): LF, VT and FF also return to
   column 0.
+- **Wrapped lines:** a row that autowraps is marked on the screen
+  (`Screen::row_wrapped`, and `history_wrapped` once it scrolls off), so a
+  host can copy a wrapped line as one; erasing to the end of the row
+  clears the mark. Checkpointed.
 - **Wide characters:** a double-width glyph (CJK, emoji; width from `uwidth`)
   takes two cells and advances the cursor by two. At the right edge it wraps
   whole, or is dropped when autowrap is off; it is never split.

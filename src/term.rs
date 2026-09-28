@@ -378,9 +378,7 @@ impl Term {
 
         if self.wrap_pending && self.autowrap {
             // The previous write filled the last column; wrap now.
-            self.set_col(0);
-            self.line_feed();
-            self.wrap_pending = false;
+            self.autowrap_line();
         }
 
         // A double-width glyph needs two columns; if only one remains it cannot
@@ -390,9 +388,7 @@ impl Term {
             if !self.autowrap {
                 return;
             }
-            self.set_col(0);
-            self.line_feed();
-            self.wrap_pending = false;
+            self.autowrap_line();
         }
 
         // The per-character hot path borrows the active buffer once for the
@@ -422,6 +418,18 @@ impl Term {
         if at_edge && autowrap {
             self.wrap_pending = true;
         }
+    }
+
+    /// Autowrap: the row is marked as continuing onto the next (so a host
+    /// copies them as one line), then the cursor moves to the next row's
+    /// start. Marked before the line feed, so a row the feed scrolls into the
+    /// history takes the mark with it.
+    fn autowrap_line(&mut self) {
+        let row = self.cursor().row;
+        self.active_mut().set_row_wrapped(row, true);
+        self.set_col(0);
+        self.line_feed();
+        self.wrap_pending = false;
     }
 
     fn control(&mut self, b: u8) {
@@ -678,6 +686,10 @@ impl Term {
         };
         for c in range {
             self.active_mut().set(cr, c, blank);
+        }
+        // Its end erased, the row no longer runs on into the next.
+        if mode != 1 {
+            self.active_mut().set_row_wrapped(cr, false);
         }
     }
 

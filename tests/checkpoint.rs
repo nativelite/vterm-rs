@@ -203,23 +203,54 @@ fn bracketed_paste_and_cursor_visibility_are_tracked_and_survive_a_checkpoint() 
 }
 
 #[test]
-fn version_1_checkpoints_still_restore() {
-    // A version 2 checkpoint, made version 1 by dropping the second flags
-    // byte (after magic, version and the first flags byte), as logs written
-    // before bracketed paste hold them.
-    let mut t = Term::new(3, 8);
-    t.feed(b"\x1b[?2004hold text");
-    let mut ck = t.checkpoint().expect("at ground");
-    assert_eq!(&ck[4..6], &2u16.to_le_bytes());
-    ck[4..6].copy_from_slice(&1u16.to_le_bytes());
-    ck.remove(7);
-    let r = Term::restore(&ck).expect("a version 1 checkpoint restores");
-    assert!(
-        !r.bracketed_paste(),
-        "a mode version 1 did not carry starts off"
-    );
-    assert_eq!(r.screen().cell(0, 0).ch, 'o');
-    // An unknown version is still refused.
+fn checkpoints_from_older_versions_still_restore() {
+    // Written by vterm itself at those versions (tests/fixtures), from a
+    // 3x8 screen fed "\x1b[?2004habcdefghij\r\nok": logs hold such
+    // checkpoints. What an older version did not carry restores off.
+    for (bytes, version, bracketed) in [
+        (
+            &include_bytes!("fixtures/checkpoint-v1.bin")[..],
+            1u16,
+            false,
+        ),
+        (&include_bytes!("fixtures/checkpoint-v2.bin")[..], 2, true),
+    ] {
+        assert_eq!(&bytes[4..6], &version.to_le_bytes());
+        let r = Term::restore(bytes).expect("an older checkpoint restores");
+        assert_eq!(r.bracketed_paste(), bracketed, "version {version}");
+        assert_eq!(r.screen().cell(0, 0).ch, 'a');
+        assert_eq!(r.screen().cell(1, 0).ch, 'i');
+        assert!(!r.screen().row_wrapped(0), "no wrap marks before version 3");
+    }
+    // An unknown version is refused.
+    let mut ck = include_bytes!("fixtures/checkpoint-v2.bin").to_vec();
     ck[4..6].copy_from_slice(&9u16.to_le_bytes());
     assert!(Term::restore(&ck).is_err());
+}
+
+#[test]
+fn an_autowrapped_row_is_marked_and_the_mark_survives_a_checkpoint() {
+    let mut t = Term::new(3, 8);
+    t.feed(b"abcdefghij\r\nok");
+    let s = t.screen();
+    assert!(s.row_wrapped(0), "abcdefgh ran on into ij");
+    assert!(!s.row_wrapped(1), "ij ended in a line break");
+    let ck = t.checkpoint().expect("at ground");
+    let r = Term::restore(&ck).expect("restore");
+    assert!(r.screen().row_wrapped(0) && !r.screen().row_wrapped(1));
+    // Erasing to the end of the line ends the run-on.
+    let mut t = r;
+    t.feed(b"\x1b[1;3H\x1b[K");
+    assert!(!t.screen().row_wrapped(0));
+}
+
+#[test]
+fn a_wrapped_line_keeps_its_mark_in_the_history() {
+    let mut t = Term::with_history(2, 4, 10);
+    // "abcdefgh" wraps once; two more line feeds push both rows out.
+    t.feed(b"abcdefgh\r\n\r\n");
+    let h = t.scrollback();
+    assert_eq!(h.history_len(), 2);
+    assert!(h.history_wrapped(1), "abcd, older, ran on");
+    assert!(!h.history_wrapped(0), "efgh ended with a line break");
 }
