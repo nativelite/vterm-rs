@@ -44,6 +44,8 @@ impl Term {
     pub fn scrollback(&self) -> &ansi::Screen; // primary buffer + its history
     pub fn in_alternate_screen(&self) -> bool;
     pub fn in_sync(&self) -> bool;          // inside a ?2026 synchronized update
+    pub fn cursor_visible(&self) -> bool;   // ?25h (default) / ?25l
+    pub fn bracketed_paste(&self) -> bool;  // ?2004h: wrap pastes in ESC[200~ ESC[201~
     pub fn resize(&mut self, rows: usize, cols: usize);
 
     // Save and rebuild the whole emulator state.
@@ -75,8 +77,10 @@ The honest MVP, enough to host a shell and the common agent TUIs correctly:
 - **Autowrap** (`DECAWM`, default on) with the deferred pending-wrap latch at
   the right edge.
 - **Cursor save/restore:** `DECSC`/`DECRC` (`ESC 7`/`ESC 8`) and CSI `s`/`u`.
-- **Cursor show/hide:** `?25h`/`?25l` are accepted and the state is kept (and
-  checkpointed), but `Term` has no getter for it yet.
+- **Cursor show/hide:** `?25h`/`?25l`, read with `cursor_visible()`
+  (checkpointed).
+- **Bracketed paste:** `?2004h`/`?2004l`, read with `bracketed_paste()`
+  (checkpointed); the host wraps what it pastes.
 - **Alt-screen:** `?1049h/l`, `?47h/l`, `?1047h/l`: swap to a cleared second
   buffer so a full-screen app does not scribble the primary one.
 - **Synchronized output:** `?2026h`/`?2026l`; see `in_sync` above.

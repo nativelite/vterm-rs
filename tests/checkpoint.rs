@@ -188,3 +188,38 @@ fn new_line_mode_survives_a_checkpoint() {
     r.feed(b"\ncd");
     assert_eq!(r.screen().cell(1, 0).ch, 'c', "LNM still on after restore");
 }
+
+#[test]
+fn bracketed_paste_and_cursor_visibility_are_tracked_and_survive_a_checkpoint() {
+    let mut t = Term::new(4, 10);
+    assert!(!t.bracketed_paste() && t.cursor_visible(), "defaults");
+    t.feed(b"\x1b[?2004h\x1b[?25l");
+    assert!(t.bracketed_paste() && !t.cursor_visible());
+    let ck = t.checkpoint().expect("at ground");
+    let mut r = Term::restore(&ck).expect("restore");
+    assert!(r.bracketed_paste() && !r.cursor_visible(), "restored");
+    r.feed(b"\x1b[?2004l\x1b[?25h");
+    assert!(!r.bracketed_paste() && r.cursor_visible());
+}
+
+#[test]
+fn version_1_checkpoints_still_restore() {
+    // A version 2 checkpoint, made version 1 by dropping the second flags
+    // byte (after magic, version and the first flags byte), as logs written
+    // before bracketed paste hold them.
+    let mut t = Term::new(3, 8);
+    t.feed(b"\x1b[?2004hold text");
+    let mut ck = t.checkpoint().expect("at ground");
+    assert_eq!(&ck[4..6], &2u16.to_le_bytes());
+    ck[4..6].copy_from_slice(&1u16.to_le_bytes());
+    ck.remove(7);
+    let r = Term::restore(&ck).expect("a version 1 checkpoint restores");
+    assert!(
+        !r.bracketed_paste(),
+        "a mode version 1 did not carry starts off"
+    );
+    assert_eq!(r.screen().cell(0, 0).ch, 'o');
+    // An unknown version is still refused.
+    ck[4..6].copy_from_slice(&9u16.to_le_bytes());
+    assert!(Term::restore(&ck).is_err());
+}

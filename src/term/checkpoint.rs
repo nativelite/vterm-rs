@@ -24,7 +24,7 @@ use ansi::{Cell, CellWidth, Color, Cursor, Parser, Screen, Style, Utf8Decoder};
 use std::fmt;
 
 const MAGIC: &[u8; 4] = b"VTCK";
-const VERSION: u16 = 1;
+const VERSION: u16 = 2;
 /// Refuse to allocate grids larger than this when restoring untrusted bytes.
 const MAX_CELLS: usize = 16 * 1024 * 1024;
 
@@ -66,6 +66,8 @@ impl Term {
             | (self.sync_frame.is_some() as u8) << 6
             | (self.newline_mode as u8) << 7;
         w.push(flags);
+        // Version 2: a second flags byte.
+        w.push(self.bracketed_paste as u8);
         put_style(&mut w, &self.style);
         put_u32(&mut w, self.scroll_top as u32);
         put_u32(&mut w, self.scroll_bottom as u32);
@@ -98,10 +100,14 @@ impl Term {
         if r.take(4)? != MAGIC {
             return Err(RestoreError("not a checkpoint"));
         }
-        if r.u16()? != VERSION {
+        let version = r.u16()?;
+        if version != 1 && version != VERSION {
             return Err(RestoreError("unsupported version"));
         }
         let flags = r.u8()?;
+        // Version 1 had one flags byte; its checkpoints restore with the
+        // later modes off, as they were when taken.
+        let flags2 = if version >= 2 { r.u8()? } else { 0 };
         let bit = |n: u8| flags & (1 << n) != 0;
         let style = r.style()?;
         let scroll_top = r.u32()? as usize;
@@ -153,6 +159,7 @@ impl Term {
         // Bit 7 was always 0 before LNM existed, so older checkpoints restore
         // with the mode off, as they were taken.
         term.newline_mode = bit(7);
+        term.bracketed_paste = flags2 & 1 != 0;
         term.in_sync = bit(4);
         term.style = style;
         term.scroll_top = scroll_top;

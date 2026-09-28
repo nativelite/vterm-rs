@@ -43,9 +43,12 @@ pub struct Term {
     wrap_pending: bool,
     /// Autowrap mode (DECAWM). Default on.
     autowrap: bool,
-    /// Cursor visibility (DECTCEM, `?25h`/`?25l`). Tracked for the host; the
-    /// screen cursor position is always synced regardless.
+    /// Cursor visibility (DECTCEM, `?25h`/`?25l`), for the host to draw or
+    /// not; the screen cursor position is always synced regardless.
     cursor_visible: bool,
+    /// Bracketed paste (`?2004h`/`?2004l`): the program wants pasted text
+    /// wrapped in `ESC [200~` ... `ESC [201~`. The host does the wrapping.
+    pub(crate) bracketed_paste: bool,
     /// Line feed / new line mode (LNM, ANSI mode 20, `CSI 20 h`/`l`): while
     /// set, LF, VT and FF also return the cursor to column 0. A host that
     /// feeds output from plain pipes (no tty to turn LF into CR LF) sets it
@@ -104,6 +107,7 @@ impl Term {
             wrap_pending: false,
             autowrap: true,
             cursor_visible: true,
+            bracketed_paste: false,
             newline_mode: false,
             parser: Parser::new(),
             decoder: Utf8Decoder::new(),
@@ -161,6 +165,18 @@ impl Term {
     /// scrolling back through history does not apply.
     pub fn in_alternate_screen(&self) -> bool {
         self.in_alt
+    }
+
+    /// Whether the program has the cursor shown (`?25h`, the default) or
+    /// hidden (`?25l`), for the host to draw it or not.
+    pub fn cursor_visible(&self) -> bool {
+        self.cursor_visible
+    }
+
+    /// Whether the program asked for bracketed paste (`?2004h`): the host
+    /// then wraps what it pastes in `ESC [200~` and `ESC [201~`.
+    pub fn bracketed_paste(&self) -> bool {
+        self.bracketed_paste
     }
 
     /// True while the child is inside a synchronized update (DEC mode 2026):
@@ -539,6 +555,7 @@ impl Term {
         for &p in params {
             match p {
                 25 => self.cursor_visible = set,
+                2004 => self.bracketed_paste = set,
                 7 => self.autowrap = set, // DECAWM
                 47 | 1047 | 1049 => self.set_alt(set),
                 2026 => self.set_sync(set), // synchronized output
