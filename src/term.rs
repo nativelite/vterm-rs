@@ -24,6 +24,8 @@ pub struct Term {
     primary: Screen,
     /// Scrollback capacity in lines (0: none).
     history: usize,
+    /// Scrollback capacity in bytes as stored (0: no cap beyond the lines).
+    history_bytes: usize,
     /// The alternate screen buffer, used while an app enters alt-screen mode
     /// (`?1049h`/`?47h`/`?1047h`). Kept the same size as `primary`.
     alt: Screen,
@@ -97,6 +99,7 @@ impl Term {
         Term {
             primary: Screen::with_history(rows, cols, lines),
             history: lines,
+            history_bytes: 0,
             alt: Screen::new(rows, cols),
             in_alt: false,
             style: Style::default(),
@@ -161,6 +164,14 @@ impl Term {
         &self.primary
     }
 
+    /// Cap the scrollback at `max` bytes as stored (0: no cap), dropping the
+    /// oldest lines past it (`ansi::Screen::set_history_bytes`): a memory
+    /// bound however wide or colourful lines are. Kept across resizes.
+    pub fn set_history_bytes(&mut self, max: usize) {
+        self.history_bytes = max;
+        self.primary.set_history_bytes(max);
+    }
+
     /// True while the alternate screen is active (full-screen programs), where
     /// scrolling back through history does not apply.
     pub fn in_alternate_screen(&self) -> bool {
@@ -194,10 +205,9 @@ impl Term {
         let rows = rows.max(1);
         let cols = cols.max(1);
         let cursor = self.cursor();
-        let old_primary = std::mem::replace(
-            &mut self.primary,
-            Screen::with_history(rows, cols, self.history),
-        );
+        let mut primary = Screen::with_history(rows, cols, self.history);
+        primary.set_history_bytes(self.history_bytes);
+        let old_primary = std::mem::replace(&mut self.primary, primary);
         let old_alt = std::mem::replace(&mut self.alt, Screen::new(rows, cols));
         self.primary.copy_history_from(&old_primary);
         copy_top_left(&old_primary, &mut self.primary);

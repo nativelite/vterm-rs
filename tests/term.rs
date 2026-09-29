@@ -827,3 +827,33 @@ fn history_holds_what_scrolls_off_and_survives_a_resize() {
     plain.feed(b"a\r\nb\r\nc\r\nd\r\n");
     assert_eq!(plain.scrollback().history_len(), 0);
 }
+
+#[test]
+fn a_history_byte_cap_bounds_wide_coloured_scrollback_across_a_resize() {
+    let mut t = Term::with_history(4, 200, 100_000);
+    t.set_history_bytes(200 * 1024);
+    // 200 columns, a colour change on every cell: a few KB a line stored.
+    let mut line = Vec::new();
+    for c in 0..200u32 {
+        line.extend_from_slice(format!("\x1b[38;5;{}m{}", c % 200, c % 10).as_bytes());
+    }
+    line.extend_from_slice(b"\x1b[0m\r\n");
+    for _ in 0..2_000 {
+        t.feed(&line);
+    }
+    let cap = 200 * 1024 + 2 * 96 * 1024;
+    let h = t.scrollback();
+    assert!(h.history_bytes() <= cap, "{} bytes", h.history_bytes());
+    assert!(h.history_len() < 2_000, "the oldest went");
+    // A resize keeps the cap.
+    t.resize(6, 150);
+    for _ in 0..2_000 {
+        t.feed(&line);
+    }
+    let h = t.scrollback();
+    assert!(
+        h.history_bytes() <= cap,
+        "{} bytes after a resize",
+        h.history_bytes()
+    );
+}
