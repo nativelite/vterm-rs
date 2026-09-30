@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Mouse tracking modes** (`?1000`, `?1002`, `?1003`, and `?1006` SGR
+  encoding): `Term::mouse_tracking` (`MouseTracking::Off`/`Click`/`Drag`/`Motion`)
+  and `Term::mouse_sgr`, so a host knows when a program wants the mouse
+  reported. Not kept in checkpoints: a restored screen starts with it off.
+
 ### Changed
 - **Plain text is written straight into the screen** (`ansi::Screen::write_ascii`)
   instead of through a scratch buffer of cells. With `ansi`'s lazy row

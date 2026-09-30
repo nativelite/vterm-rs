@@ -857,3 +857,34 @@ fn a_history_byte_cap_bounds_wide_coloured_scrollback_across_a_resize() {
         h.history_bytes()
     );
 }
+
+#[test]
+fn mouse_tracking_modes_follow_the_program() {
+    use vterm::MouseTracking;
+    let mut t = Term::new(24, 80);
+    assert_eq!(t.mouse_tracking(), MouseTracking::Off);
+    assert!(!t.mouse_sgr());
+    // As atrium turns its mouse on: all three, then SGR.
+    t.feed(b"\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h");
+    assert_eq!(
+        t.mouse_tracking(),
+        MouseTracking::Motion,
+        "the last one set"
+    );
+    assert!(t.mouse_sgr());
+    t.feed(b"\x1b[?1000;1006l");
+    assert_eq!(
+        t.mouse_tracking(),
+        MouseTracking::Off,
+        "any reset turns it off"
+    );
+    assert!(!t.mouse_sgr());
+    t.feed(b"\x1b[?1002h");
+    assert_eq!(t.mouse_tracking(), MouseTracking::Drag);
+    t.feed(b"\x1b[?1000h");
+    assert_eq!(
+        t.mouse_tracking(),
+        MouseTracking::Click,
+        "one replaces another"
+    );
+}

@@ -17,6 +17,21 @@ use ansi::{Cell, Cursor, Event, Parser, Screen, Style, Utf8Decoder};
 mod checkpoint;
 pub use checkpoint::RestoreError;
 
+/// Mouse events a program asked its terminal to send, from the xterm
+/// tracking modes. Each includes the ones above it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MouseTracking {
+    /// None: the terminal uses the mouse itself (selection, scrolling).
+    #[default]
+    Off,
+    /// Button presses and releases, and the wheel (`?1000h`).
+    Click,
+    /// Also motion while a button is held (`?1002h`).
+    Drag,
+    /// Also motion with no button held (`?1003h`).
+    Motion,
+}
+
 /// A minimal VT100/ECMA-48 terminal emulator over an [`ansi::Screen`].
 pub struct Term {
     /// The primary (normal) screen buffer. It carries the scrollback, if any
@@ -51,6 +66,10 @@ pub struct Term {
     /// Bracketed paste (`?2004h`/`?2004l`): the program wants pasted text
     /// wrapped in `ESC [200~` ... `ESC [201~`. The host does the wrapping.
     pub(crate) bracketed_paste: bool,
+    /// Mouse reporting the program asked for (`?1000`/`?1002`/`?1003`), and
+    /// in which encoding (`?1006`, SGR). The host reports the mouse.
+    mouse_tracking: MouseTracking,
+    mouse_sgr: bool,
     /// Line feed / new line mode (LNM, ANSI mode 20, `CSI 20 h`/`l`): while
     /// set, LF, VT and FF also return the cursor to column 0. A host that
     /// feeds output from plain pipes (no tty to turn LF into CR LF) sets it
@@ -111,6 +130,8 @@ impl Term {
             autowrap: true,
             cursor_visible: true,
             bracketed_paste: false,
+            mouse_tracking: MouseTracking::Off,
+            mouse_sgr: false,
             newline_mode: false,
             parser: Parser::new(),
             decoder: Utf8Decoder::new(),
@@ -188,6 +209,20 @@ impl Term {
     /// then wraps what it pastes in `ESC [200~` and `ESC [201~`.
     pub fn bracketed_paste(&self) -> bool {
         self.bracketed_paste
+    }
+
+    /// Which mouse events the program asked to be sent (`?1000h` clicks,
+    /// `?1002h` also drags, `?1003h` also any motion); the host reports
+    /// them instead of using the mouse itself.
+    pub fn mouse_tracking(&self) -> MouseTracking {
+        self.mouse_tracking
+    }
+
+    /// Whether mouse reports use the SGR encoding (`?1006h`,
+    /// `ESC [< b ; x ; y M`), else the original one (`ESC [M` and three
+    /// bytes, for positions up to 223).
+    pub fn mouse_sgr(&self) -> bool {
+        self.mouse_sgr
     }
 
     /// True while the child is inside a synchronized update (DEC mode 2026):
@@ -574,6 +609,17 @@ impl Term {
             match p {
                 25 => self.cursor_visible = set,
                 2004 => self.bracketed_paste = set,
+                // The tracking modes replace one another; resetting the one
+                // in force (or any, as programs send all three) turns it off.
+                1000 | 1002 | 1003 => {
+                    self.mouse_tracking = match (set, p) {
+                        (true, 1000) => MouseTracking::Click,
+                        (true, 1002) => MouseTracking::Drag,
+                        (true, _) => MouseTracking::Motion,
+                        (false, _) => MouseTracking::Off,
+                    }
+                }
+                1006 => self.mouse_sgr = set,
                 7 => self.autowrap = set, // DECAWM
                 47 | 1047 | 1049 => self.set_alt(set),
                 2026 => self.set_sync(set), // synchronized output
