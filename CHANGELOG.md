@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-10-18
+
 ### Added
 - **Mouse tracking modes** (`?1000`, `?1002`, `?1003`, and `?1006` SGR
   encoding): `Term::mouse_tracking` (`MouseTracking::Off`/`Click`/`Drag`/`Motion`)
@@ -213,7 +215,8 @@ dependencies remain forbidden. Third crate in the nativelite **agent terminal**
 suite (see `roadmap/atrium-0.2-tiling.md` in `nativelite/ops`); the emulator core
 that atrium 0.2 tiled panes are built on.
 
-[Unreleased]: https://github.com/nativelite/vterm-rs/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/nativelite/vterm-rs/compare/v0.5.4...HEAD
+[0.5.4]: https://github.com/nativelite/vterm-rs/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/nativelite/vterm-rs/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/nativelite/vterm-rs/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/nativelite/vterm-rs/compare/v0.5.0...v0.5.1
