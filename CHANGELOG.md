@@ -57,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Feeding bytes to the emulator is 1.76x faster, with no API change.
 
 ### Changed
+  Scrollback is not part of a checkpoint: a restored terminal starts with no
+  history and records none (`history_capacity()` is 0) until it is given one.
 - **`Term::feed` consumes `ansi::Parser::feed_with`** (borrowed events) instead
   of `feed` (a `Vec<Token>` per chunk). Nothing is allocated per token: text
   runs are decoded straight off the caller's buffer with `ansi::Utf8Decoder`,

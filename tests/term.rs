@@ -785,6 +785,19 @@ fn a_character_split_across_chunks_is_not_skipped_by_the_ascii_path() {
     t.feed(b"\xA9 ok");
     let row: String = (0..7).map(|c| t.screen().cell(0, c).ch).collect();
     assert_eq!(row, "café ok");
+    // The case the guard exists for: a half-received character followed by a
+    // chunk that is PURE ASCII. Without the `decoder.is_idle()` check the fast
+    // path would write " ok" first and lose the C3 (the screen read "caf ok ").
+    let mut t = Term::new(2, 10);
+    t.feed(b"caf\xC3");
+    t.feed(b" ok");
+    let row: String = (0..7).map(|c| t.screen().cell(0, c).ch).collect();
+    assert_eq!(row, "caf\u{FFFD} ok");
+    let mut t = Term::new(2, 10);
+    t.feed(b"a\xE2\x82");
+    t.feed(b"bc\r");
+    let row: String = (0..3).map(|c| t.screen().cell(0, c).ch).collect();
+    assert_eq!(row, "a\u{FFFD}b");
     // A truncated character before a control still renders as U+FFFD.
     let mut t = Term::new(2, 10);
     t.feed(b"a\xE2\x82\rb");
@@ -887,4 +900,28 @@ fn mouse_tracking_modes_follow_the_program() {
         MouseTracking::Click,
         "one replaces another"
     );
+}
+
+/// A synchronized-output snapshot (`?2026h`) is the visible rows only: while
+/// it is open `screen()` reads no scrollback, and the history is intact once
+/// it closes. RED-when-broken: snapshotting with `.clone()` copies the
+/// history too, and `history_len()` is non-zero inside the frame.
+#[test]
+fn a_sync_snapshot_carries_no_scrollback() {
+    let mut t = Term::with_history(2, 10, 100);
+    for i in 0..20 {
+        t.feed(format!("line{i}\r\n").as_bytes());
+    }
+    let before = t.screen().history_len();
+    assert!(before > 0, "the history filled: {before}");
+    t.feed(b"\x1b[?2026h");
+    assert!(t.in_sync());
+    assert_eq!(
+        t.screen().history_len(),
+        0,
+        "the frame is the visible rows only"
+    );
+    t.feed(b"\x1b[?2026l");
+    assert!(!t.in_sync());
+    assert_eq!(t.screen().history_len(), before, "the history is untouched");
 }
