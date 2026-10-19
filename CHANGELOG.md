@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`cargo bench --bench feed_throughput`**: a standard-library-only benchmark
+  of `Term::feed`, in `benches/`, over generated streams: plain ASCII, agent
+  output, SGR-heavy text, cursor redraws, UTF-8, a mix of those, and the agent
+  stream into `Term::with_history`. Median MiB/s of five runs, about 4 s in
+  release. `benches/README.md` says what each number means, has this
+  release's results, and names where every performance figure in this
+  changelog came from. The 0.5.4 entry below now says which of its figures
+  came from a harness outside this repo, beside the bench's own number.
+
 ### Fixed
 - **A restored terminal keeps its scrollback capacity.** `Term::restore` built
   a terminal with no history, so one made by `Term::with_history` came back
@@ -31,12 +41,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Plain text is written straight into the screen** (`ansi::Screen::write_ascii`)
   instead of through a scratch buffer of cells. With `ansi`'s lazy row
   clearing and faster UTF-8 decoding, `Term::feed` on agent output (177x47)
-  went from 188 to 330 MiB/s.
+  went from 188 to 330 MiB/s (development measurement; see the note below).
 - **The ASCII check on text runs is a word-wide `is_ascii`**, since the parser
   never passes controls in text. With `ansi`'s faster text skip, `Term::feed`
-  is now 570 MiB/s on the same workload.
+  reached 570 MiB/s on the same workload.
 - **Plain ASCII text skips UTF-8 decoding** when no character is half-received
   (`ansi::Utf8Decoder::is_idle`): 570 -> 631 MiB/s.
+- *Where those three figures come from.* They are development measurements
+  recorded in the commits that made each change (d39b249, 673dc5f, b7870bb):
+  64 MiB of generated agent output into a 177x47 `Term`, release build, on an
+  i5-12600K, with a harness that is not in this repository, so they cannot be
+  rerun from it. The in-repo measurement, added after this release, is
+  `cargo bench --bench feed_throughput` (`benches/README.md`): its `agent`
+  variant (16 MiB, 47x177, median of 5 runs) measures **544.6 MiB/s** for
+  this release's code on the same machine, and its `ascii` variant, the fast
+  path alone, 804.5 MiB/s. A different generated stream gives a different
+  number; compare against the bench from here on.
 
 ### Added
 - **Scrollback: `Term::with_history(rows, cols, lines)`** keeps up to `lines`
@@ -61,8 +81,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `ansi::Parser::is_ground()`), so the tokenizer never needs saving.
   - Versioned, run-length encoded, and validated on restore: damaged bytes are
     an error (`RestoreError`), never a panic.
-  - Measured (release, i5-12600K): 24x80 full of coloured build output,
+  - Measured by `tests/checkpoint.rs::measure_checkpoint_cost` (`#[ignore]`;
+    run it with `cargo test --release --test checkpoint -- --ignored
+    --nocapture`), release, i5-12600K: 24x80 full of coloured build output,
     19.7 KB, save 23 us, restore 63 us; 50x200, 42.1 KB, 111 us / 93 us.
+    Rerun 2026-10-18 on the same machine: the sizes are identical (19,709 and
+    42,142 bytes), save 27 / 108 us, restore 48 / 67 us.
 
 ## [0.5.3] - 2026-09-22
 

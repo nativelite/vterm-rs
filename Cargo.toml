@@ -19,3 +19,10 @@ uwidth = { package = "nativelite-uwidth", version = "0.1", path = "../uwidth-rs"
 [lib]
 name = "vterm"
 path = "src/lib.rs"
+
+# `cargo bench --bench feed_throughput`: a stdlib-only `main()` timing
+# `Term::feed`, no benchmark framework (see benches/README.md). Under
+# `cargo test --all-targets` it only builds and returns.
+[[bench]]
+name = "feed_throughput"
+harness = false
