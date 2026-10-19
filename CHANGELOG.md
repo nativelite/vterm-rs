@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-10-18
+
 ### Added
 - **`cargo bench --bench feed_throughput`**: a standard-library-only benchmark
   of `Term::feed`, in `benches/`, over generated streams: plain ASCII, agent
@@ -93,8 +95,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Feeding bytes to the emulator is 1.76x faster, with no API change.
 
 ### Changed
-  Scrollback is not part of a checkpoint: a restored terminal starts with no
-  history and records none (`history_capacity()` is 0) until it is given one.
 - **`Term::feed` consumes `ansi::Parser::feed_with`** (borrowed events) instead
   of `feed` (a `Vec<Token>` per chunk). Nothing is allocated per token: text
   runs are decoded straight off the caller's buffer with `ansi::Utf8Decoder`,
@@ -253,7 +253,8 @@ dependencies remain forbidden. Third crate in the nativelite **agent terminal**
 suite (see `roadmap/atrium-0.2-tiling.md` in `nativelite/ops`); the emulator core
 that atrium 0.2 tiled panes are built on.
 
-[Unreleased]: https://github.com/nativelite/vterm-rs/compare/v0.5.4...HEAD
+[Unreleased]: https://github.com/nativelite/vterm-rs/compare/v0.5.5...HEAD
+[0.5.5]: https://github.com/nativelite/vterm-rs/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/nativelite/vterm-rs/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/nativelite/vterm-rs/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/nativelite/vterm-rs/compare/v0.5.1...v0.5.2
