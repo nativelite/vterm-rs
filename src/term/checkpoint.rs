@@ -17,14 +17,16 @@
 //! Format (little-endian, versioned): magic `VTCK`, version, then the fields
 //! below. Screens are run-length encoded, since most cells of most screens are
 //! blank. [`Term::restore`] validates everything and never panics on bad
-//! input.
+//! input. Version 4 carries the scrollback *capacity* (lines and the byte cap),
+//! never the scrollback: the lines belong to whoever keeps the checkpoints, and
+//! a restored terminal starts with an empty history that fills again.
 
 use super::Term;
 use ansi::{Cell, CellWidth, Color, Cursor, Parser, Screen, Style, Utf8Decoder};
 use std::fmt;
 
 const MAGIC: &[u8; 4] = b"VTCK";
-const VERSION: u16 = 3;
+const VERSION: u16 = 4;
 /// Refuse to allocate grids larger than this when restoring untrusted bytes.
 const MAX_CELLS: usize = 16 * 1024 * 1024;
 
@@ -68,6 +70,10 @@ impl Term {
         w.push(flags);
         // Version 2: a second flags byte.
         w.push(self.bracketed_paste as u8);
+        // Version 4: the scrollback capacity, lines then the byte cap.
+        put_u32(&mut w, self.history as u32);
+        put_u32(&mut w, self.history_bytes as u32);
+        put_u32(&mut w, (self.history_bytes as u64 >> 32) as u32);
         put_style(&mut w, &self.style);
         put_u32(&mut w, self.scroll_top as u32);
         put_u32(&mut w, self.scroll_bottom as u32);
@@ -114,6 +120,19 @@ impl Term {
         // later modes off, as they were when taken. Version 3 added wrap marks
         // to each screen.
         let flags2 = if version >= 2 { r.u8()? } else { 0 };
+        // Version 4 carries the scrollback capacity; before it a restored
+        // terminal kept none.
+        let (history, history_bytes) = if version >= 4 {
+            let lines = r.u32()? as usize;
+            let lo = r.u32()? as u64;
+            let hi = r.u32()? as u64;
+            (
+                lines,
+                usize::try_from(lo | (hi << 32)).unwrap_or(usize::MAX),
+            )
+        } else {
+            (0, 0)
+        };
         let bit = |n: u8| flags & (1 << n) != 0;
         let style = r.style()?;
         let scroll_top = r.u32()? as usize;
@@ -130,9 +149,10 @@ impl Term {
         let tabs: Vec<bool> = (0..ntabs)
             .map(|i| tab_bytes[i / 8] & (1 << (i % 8)) != 0)
             .collect();
-        let primary = r.screen()?;
-        let alt = r.screen()?;
-        let sync_frame = if bit(6) { Some(r.screen()?) } else { None };
+        let mut primary = r.screen(history)?;
+        primary.set_history_bytes(history_bytes);
+        let alt = r.screen(0)?;
+        let sync_frame = if bit(6) { Some(r.screen(0)?) } else { None };
         if r.at != bytes.len() {
             return Err(RestoreError("trailing bytes"));
         }
@@ -156,6 +176,8 @@ impl Term {
         }
 
         let mut term = Term::new(rows, cols);
+        term.history = history;
+        term.history_bytes = history_bytes;
         term.primary = primary;
         term.alt = alt;
         term.in_alt = bit(0);
@@ -336,7 +358,9 @@ impl<'a> Reader<'a> {
             width,
         })
     }
-    fn screen(&mut self) -> Result<Screen, RestoreError> {
+    /// One screen, with room for `history` scrollback lines (the primary
+    /// screen's capacity; 0 for the alternate screen and a sync frame).
+    fn screen(&mut self, history: usize) -> Result<Screen, RestoreError> {
         let rows = self.u32()? as usize;
         let cols = self.u32()? as usize;
         let total = rows
@@ -347,7 +371,7 @@ impl<'a> Reader<'a> {
         if crow >= rows || ccol >= cols {
             return Err(RestoreError("cursor outside the screen"));
         }
-        let mut screen = Screen::new(rows, cols);
+        let mut screen = Screen::with_history(rows, cols, history);
         let mut filled = 0usize;
         while filled < total {
             let n = self.u32()? as usize;
@@ -355,8 +379,13 @@ impl<'a> Reader<'a> {
                 return Err(RestoreError("bad cell run"));
             }
             let cell = self.cell()?;
-            for k in filled..filled + n {
-                screen.set(k / cols, k % cols, cell);
+            // A run of the blank every unwritten cell reads as is left
+            // unwritten: writing it would make a blank row one that scrolls
+            // into the history as a line, where the original's did not.
+            if cell != Cell::default() {
+                for k in filled..filled + n {
+                    screen.set(k / cols, k % cols, cell);
+                }
             }
             filled += n;
         }

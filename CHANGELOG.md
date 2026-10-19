@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A restored terminal keeps its scrollback capacity.** `Term::restore` built
+  a terminal with no history, so one made by `Term::with_history` came back
+  with `history_capacity()` 0 and never recorded a scrolled-off line again.
+  Checkpoint format 4 carries the capacity — the line count and the byte cap
+  (`set_history_bytes`) — and a restored terminal starts with an empty history
+  that fills as it scrolls and holds through a resize. The lines themselves are
+  still not in a checkpoint: they belong to whoever keeps the checkpoints.
+  Older checkpoints restore as before, with no capacity. A restore also leaves
+  runs of the blank cell unwritten, as they were, so a restored screen's blank
+  rows do not scroll into the history as lines the original never recorded.
+
 ## [0.5.4] - 2026-10-18
 
 ### Added

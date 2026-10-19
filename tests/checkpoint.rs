@@ -254,3 +254,67 @@ fn a_wrapped_line_keeps_its_mark_in_the_history() {
     assert!(h.history_wrapped(1), "abcd, older, ran on");
     assert!(!h.history_wrapped(0), "efgh ended with a line break");
 }
+
+/// A checkpoint carries the scrollback CAPACITY (lines and the byte cap), not
+/// the scrollback: the lines live on disk with whoever keeps checkpoints, and a
+/// restored terminal starts with an empty history that fills again as it
+/// scrolls, and holds through a resize. RED-when-broken: `restore` built a
+/// `Term::new`, so a restored terminal had capacity 0 and never recorded a
+/// line again.
+#[test]
+fn a_restored_terminal_keeps_its_scrollback_capacity() {
+    let mut t = Term::with_history(4, 10, 100);
+    t.set_history_bytes(1 << 20);
+    for i in 0..50 {
+        t.feed(format!("line{i}\r\n").as_bytes());
+    }
+    assert!(t.screen().history_len() > 0);
+    let ck = t.checkpoint().expect("at rest");
+    let mut r = Term::restore(&ck).expect("restore");
+    assert_eq!(
+        r.screen().history_capacity(),
+        100,
+        "the capacity is carried"
+    );
+    assert_eq!(
+        r.screen().history_len(),
+        0,
+        "the lines are not: they live on disk"
+    );
+    for i in 0..30 {
+        r.feed(format!("more{i}\r\n").as_bytes());
+    }
+    let recorded = r.screen().history_len();
+    assert!(recorded > 0 && recorded <= 100, "records again: {recorded}");
+    r.resize(5, 12);
+    assert_eq!(r.screen().history_capacity(), 100, "and through a resize");
+    assert_eq!(r.screen().history_len(), recorded);
+    // The byte cap is carried too: with room for 20,000 lines but a cap of one
+    // 64 KiB chunk, the restored terminal drops old lines by bytes, exactly as
+    // a fresh terminal with that cap does.
+    let cap = 64 * 1024;
+    let mut t = Term::with_history(4, 10, 20_000);
+    t.set_history_bytes(cap);
+    let ck = t.checkpoint().unwrap();
+    let mut r = Term::restore(&ck).unwrap();
+    let mut fresh = Term::with_history(4, 10, 20_000);
+    fresh.set_history_bytes(cap);
+    for i in 0..10_000 {
+        let line = format!("line{i}\r\n");
+        r.feed(line.as_bytes());
+        fresh.feed(line.as_bytes());
+    }
+    let (h, f) = (r.screen(), fresh.screen());
+    assert!(
+        h.history_len() < 10_000,
+        "the oldest went: {}",
+        h.history_len()
+    );
+    assert_eq!(
+        (h.history_len(), h.history_bytes()),
+        (f.history_len(), f.history_bytes())
+    );
+    // A terminal with no history checkpoints as before.
+    let r = Term::restore(&Term::new(4, 10).checkpoint().unwrap()).unwrap();
+    assert_eq!(r.screen().history_capacity(), 0);
+}
