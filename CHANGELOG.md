@@ -7,7 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.5] - 2026-10-18
+## [0.5.6] - 2026-11-09
+
+### Added
+- **`Notice`: what the program says rather than draws**, kept for the host
+  and read with `Term::take_notices()` (oldest first; `has_notices()` is the
+  cheap check after a feed). `Title` for `OSC 0` and `OSC 2`, also read any
+  time with `Term::title()`, with xterm's XTWINOPS title stack: `CSI 22;2 t`
+  (or `22;0`, or bare `22`) saves the title, `CSI 23;2 t` restores the last
+  saved and reports it as a `Title`; ten deep, the oldest forgotten past that;
+  `22;1`/`23;1` (the icon name) and every other window operation are
+  ignored. `Bell` for a `BEL` on its own (bells in a row report once; the
+  `BEL` that ends an OSC string is not one). `Toast(text)` for `OSC 9 ; text`
+  (ConEmu's notification, which Windows Terminal follows). `Progress { state,
+  percent }` for `OSC 9 ; 4 ; state [; percent]` (states 0 clear, 1 normal, 2
+  error, 3 indeterminate, 4 paused; a state past 4 is dropped, a percent past
+  100 is 100, a missing one is 0). At most 64 notices are held between reads.
+  Titles are not part of a checkpoint. Nothing else changes: the parser
+  already delivered these sequences and the emulator dropped them. Wanted by
+  fwterm for its attention rendering (atrium 0.43.0 sets its pane's title and
+  rings the bell when a session needs its human).
 
 ### Added
 - **`cargo bench --bench feed_throughput`**: a standard-library-only benchmark

@@ -32,6 +32,34 @@ pub enum MouseTracking {
     Motion,
 }
 
+/// Something the program said to the terminal rather than drew on it, for
+/// the host to show in its own way: a title, a bell, a notification, a
+/// progress report. Collected as they arrive, read with
+/// [`Term::take_notices`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Notice {
+    /// The title is now this: set with `OSC 0` or `OSC 2`, or restored
+    /// from the title stack with `CSI 23;2 t` (xterm's XTWINOPS). Also read
+    /// at any time with [`Term::title`].
+    Title(String),
+    /// `BEL` (0x07) on its own; one between two reads however many rang.
+    Bell,
+    /// `OSC 9 ; text`: a notification to show (ConEmu's, which Windows
+    /// Terminal and others follow).
+    Toast(String),
+    /// `OSC 9 ; 4 ; state ; percent`: progress. `state` is 0 (no progress:
+    /// clear it), 1 (normal), 2 (error), 3 (indeterminate) or 4 (paused);
+    /// `percent` 0 to 100, 0 when the program sent none.
+    Progress { state: u8, percent: u8 },
+}
+
+/// Most notices kept between reads; a program that floods them loses the
+/// oldest, never the terminal's memory.
+const MAX_NOTICES: usize = 64;
+
+/// Titles the stack holds, xterm's limit.
+const MAX_TITLE_STACK: usize = 10;
+
 /// A minimal VT100/ECMA-48 terminal emulator over an [`ansi::Screen`].
 pub struct Term {
     /// The primary (normal) screen buffer. It carries the scrollback, if any
@@ -96,6 +124,12 @@ pub struct Term {
     /// The last complete frame, snapshotted when a synchronized update opens.
     /// `Some` exactly while `in_sync`; `None` otherwise.
     sync_frame: Option<Screen>,
+    /// The title the program last set (or restored), if any.
+    title: Option<String>,
+    /// Titles saved with `CSI 22;2 t`, oldest first.
+    title_stack: Vec<String>,
+    /// What the program said since the host last read, oldest first.
+    notices: Vec<Notice>,
 }
 
 impl Term {
@@ -138,6 +172,9 @@ impl Term {
             dirty: false,
             in_sync: false,
             sync_frame: None,
+            title: None,
+            title_stack: Vec::new(),
+            notices: Vec::new(),
         }
     }
 
@@ -209,6 +246,106 @@ impl Term {
     /// then wraps what it pastes in `ESC [200~` and `ESC [201~`.
     pub fn bracketed_paste(&self) -> bool {
         self.bracketed_paste
+    }
+
+    /// The title the program set (`OSC 0` or `OSC 2`, or a `CSI 23;2 t`
+    /// restore), as given; `None` until it sets one. Not part of a
+    /// checkpoint: a restored terminal has no title until the program sets
+    /// one again.
+    pub fn title(&self) -> Option<&str> {
+        self.title.as_deref()
+    }
+
+    /// Whether [`Term::take_notices`] would return anything: a cheap check
+    /// for a host that polls after each feed.
+    pub fn has_notices(&self) -> bool {
+        !self.notices.is_empty()
+    }
+
+    /// What the program said since the last call ([`Notice`]), oldest
+    /// first, and nothing is kept. Empty, and allocation-free, when nothing
+    /// was said. At most 64 are held between calls; past that the oldest
+    /// are dropped.
+    pub fn take_notices(&mut self) -> Vec<Notice> {
+        std::mem::take(&mut self.notices)
+    }
+
+    fn notice(&mut self, n: Notice) {
+        // Bells in a row say the same thing once.
+        if n == Notice::Bell && self.notices.last() == Some(&Notice::Bell) {
+            return;
+        }
+        if self.notices.len() == MAX_NOTICES {
+            self.notices.remove(0);
+        }
+        self.notices.push(n);
+    }
+
+    /// An OSC string's payload: titles (0, 2), notifications and progress
+    /// (9). Anything else (colours, hyperlinks, clipboard, shell marks) is
+    /// not this crate's concern and is dropped.
+    fn osc(&mut self, data: &[u8]) {
+        let (ps, rest) = match data.iter().position(|&b| b == b';') {
+            Some(i) => (&data[..i], &data[i + 1..]),
+            None => (data, &data[data.len()..]),
+        };
+        match ps {
+            b"0" | b"2" => {
+                let title = String::from_utf8_lossy(rest).into_owned();
+                self.title = Some(title.clone());
+                self.notice(Notice::Title(title));
+            }
+            b"9" => match rest.strip_prefix(b"4;") {
+                Some(p) => self.progress(p),
+                None => self.notice(Notice::Toast(String::from_utf8_lossy(rest).into_owned())),
+            },
+            _ => {}
+        }
+    }
+
+    /// `state [; percent]` of an `OSC 9;4`: a state outside 0..=4 is not a
+    /// progress report and is dropped; a percent past 100 is 100.
+    fn progress(&mut self, p: &[u8]) {
+        let mut parts = p.split(|&b| b == b';');
+        let number = |part: Option<&[u8]>| -> Option<u32> {
+            let part = part.unwrap_or(b"");
+            if part.is_empty() || part.len() > 9 || !part.iter().all(u8::is_ascii_digit) {
+                return None;
+            }
+            std::str::from_utf8(part).ok()?.parse().ok()
+        };
+        let Some(state) = number(parts.next()).filter(|s| *s <= 4) else {
+            return;
+        };
+        let percent = number(parts.next()).unwrap_or(0).min(100);
+        self.notice(Notice::Progress {
+            state: state as u8,
+            percent: percent as u8,
+        });
+    }
+
+    /// `CSI Ps ; Pm t` (XTWINOPS): of the window operations only the title
+    /// stack is honoured. `22 ; 0|2` saves the title, `23 ; 0|2` restores
+    /// the last saved (and says so with a [`Notice::Title`]); `Pm` 1 (the
+    /// icon name alone) and every other operation are ignored.
+    fn window_op(&mut self, params: &[u16]) {
+        let which = params.get(1).copied().unwrap_or(0);
+        match (params.first().copied().unwrap_or(0), which) {
+            (22, 0 | 2) => {
+                if self.title_stack.len() == MAX_TITLE_STACK {
+                    self.title_stack.remove(0);
+                }
+                self.title_stack
+                    .push(self.title.clone().unwrap_or_default());
+            }
+            (23, 0 | 2) => {
+                if let Some(title) = self.title_stack.pop() {
+                    self.title = Some(title.clone());
+                    self.notice(Notice::Title(title));
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Which mouse events the program asked to be sent (`?1000h` clicks,
@@ -325,8 +462,10 @@ impl Term {
                 ..
             } => self.csi(private.map(char::from), params, char::from(final_byte)),
             Event::Esc { final_byte, .. } => self.esc(final_byte),
-            // Titles, DCS/SOS/PM/APC strings: nothing to render.
-            Event::Text(_) | Event::Osc(_) | Event::Other { .. } => {}
+            // Titles, notifications, progress: kept for the host (`Notice`).
+            Event::Osc(data) => self.osc(data),
+            // DCS/SOS/PM/APC strings: nothing to render.
+            Event::Text(_) | Event::Other { .. } => {}
         }
     }
 
@@ -503,7 +642,9 @@ impl Term {
                 self.set_col(self.next_tab_stop());
                 self.wrap_pending = false;
             }
-            _ => {} // BEL and other C0 controls: nothing to render.
+            // BEL: nothing to render; the host hears it as a `Notice`.
+            0x07 => self.notice(Notice::Bell),
+            _ => {} // other C0 controls: nothing to render.
         }
     }
 
@@ -600,6 +741,7 @@ impl Term {
             'P' => self.delete_chars(n1(0)),
             's' => self.save_cursor(),
             'u' => self.restore_cursor(),
+            't' => self.window_op(params),
             _ => {} // unimplemented CSI: ignore quietly
         }
     }

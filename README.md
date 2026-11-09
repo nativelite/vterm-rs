@@ -46,6 +46,9 @@ impl Term {
     pub fn in_sync(&self) -> bool;          // inside a ?2026 synchronized update
     pub fn cursor_visible(&self) -> bool;   // ?25h (default) / ?25l
     pub fn bracketed_paste(&self) -> bool;  // ?2004h: wrap pastes in ESC[200~ ESC[201~
+    pub fn title(&self) -> Option<&str>;    // OSC 0/2, or restored with CSI 23;2 t
+    pub fn has_notices(&self) -> bool;
+    pub fn take_notices(&mut self) -> Vec<Notice>; // titles, BEL, OSC 9 toasts, OSC 9;4 progress
     pub fn resize(&mut self, rows: usize, cols: usize);
 
     // Save and rebuild the whole emulator state.
@@ -84,6 +87,14 @@ The honest MVP, enough to host a shell and the common agent TUIs correctly:
 - **Alt-screen:** `?1049h/l`, `?47h/l`, `?1047h/l`: swap to a cleared second
   buffer so a full-screen app does not scribble the primary one.
 - **Synchronized output:** `?2026h`/`?2026l`; see `in_sync` above.
+- **What the program says, not draws** (`Notice`, read with `take_notices()`):
+  the title (`OSC 0`/`OSC 2`, also `title()`) with xterm's title stack
+  (`CSI 22;2 t` saves, `CSI 23;2 t` restores; ten deep), `BEL` (once between
+  reads however many rang), `OSC 9 ; text` notifications (ConEmu's, which
+  Windows Terminal follows) and `OSC 9 ; 4 ; state ; percent` progress
+  (states 0 clear, 1 normal, 2 error, 3 indeterminate, 4 paused). At most 64
+  notices are held between reads; the oldest go first. Titles are not
+  checkpointed.
 - **New-line mode:** `LNM` (`CSI 20 h`/`l`): LF, VT and FF also return to
   column 0.
 - **Wrapped lines:** a row that autowraps is marked on the screen

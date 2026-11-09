@@ -28,4 +28,4 @@
 
 mod term;
 
-pub use term::{MouseTracking, RestoreError, Term};
+pub use term::{MouseTracking, Notice, RestoreError, Term};
